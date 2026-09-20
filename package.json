@@ -1,0 +1,70 @@
+{
+  "name": "@geastack/native-webgl-angle",
+  "version": "0.1.6",
+  "description": "Typed native WebGL compatibility layer backed by ANGLE/Metal",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geastack/native-webgl-angle.git"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/nativeWebGL.ts",
+    "./nativeWebGL": "./src/nativeWebGL.ts",
+    "./nativeWebGLHost": "./src/nativeWebGLHost.ts",
+    "./nativeAudioHost": "./src/nativeAudioHost.ts",
+    "./nativeWebGLAnimation": "./src/nativeWebGLAnimation.ts",
+    "./nativeThreeUtils": "./src/nativeThreeUtils.ts",
+    "./nativeWebXRManager": "./src/nativeWebXRManager.ts",
+    "./troika-three-text": "./src/troika-three-text.ts",
+    "./geatsc-plugin": "./geatsc-plugin.mjs",
+    "./native/*": "./native/*",
+    "./package.json": "./package.json",
+    "./native-text-types": "./src/text/native-text-types.ts",
+    "./text/native-text-types": "./src/text/native-text-types.ts",
+    "./geatsc-plugin-batched-probe": "./geatsc-plugin-batched-probe.mjs",
+    "./test/batched-render-scene": "./test/batched-render-scene.ts",
+    "./test/auto-instanced-render-scene": "./test/auto-instanced-render-scene.ts"
+  },
+  "files": [
+    "src",
+    "native",
+    "geatsc-plugin.mjs",
+    "geatsc-plugin-uploads.mjs",
+    "geatsc-plugin-uniforms.mjs",
+    "geatsc-plugin-instancing.mjs",
+    "geatsc-plugin-batched-probe.mjs",
+    "test/batched-render-scene.ts",
+    "test/auto-instanced-render-scene.ts"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "test:event-dispatch": "node test/native-event-dispatch-contract.test.mjs",
+    "test:host-effects": "node test/native-host-effects-contract.test.mjs",
+    "test:allocation-contracts": "node test/render-sort-contract.test.mjs && node test/upload-array-contract.test.mjs && node test/draw-dispatch-contract.test.mjs && node test/native-upload-transport.test.mjs && node test/fixed-uniform-contract.test.mjs && node test/uniform-binding-contract.test.mjs && node test/buffer-streaming-contract.test.mjs",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node test/native-blending-contract.test.mjs && node test/native-transform-contract.test.mjs && node test/troika-three-text.test.mjs && node test/typed-void-contract.test.mjs && node test/instancing-transport-contract.test.mjs && node test/automatic-instancing-contract.test.mjs && node test/jsdoc-fold-contract.test.mjs",
+    "test:package": "node --experimental-vm-modules test/package.test.mjs"
+  },
+  "dependencies": {
+    "@geastack/apple": ">=0.2.8"
+  },
+  "peerDependencies": {
+    "three": "^0.185.0",
+    "@geastack/compiler": "^1.0.15"
+  },
+  "devDependencies": {
+    "@geastack/compiler": "^1.0.15",
+    "@geastack/core": "^0.1.23",
+    "@geastack/engine": "^0.1.5",
+    "@types/three": "^0.185.0",
+    "three": "^0.185.0",
+    "typescript": "latest"
+  }
+}
