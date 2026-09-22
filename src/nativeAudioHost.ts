@@ -7,10 +7,12 @@
 // and mp3 decode by asset basename (the native asset stub lowers
 // `import url from './x.mp3'` to the file's basename).
 //
-// Everything here is structural: the classes satisfy the app's
-// AudioContextLike/GainLike/... interfaces without importing them. On the web
-// these classes are never constructed (the real AudioContext wins), so the
-// ambient host externs are never referenced at runtime there.
+// An app writes its sound design against the browser's own Web Audio names;
+// geatsc-plugin.mjs's `ambientTypeRealizations` respell those names to the
+// classes below for the native build, so this module is the Web Audio
+// implementation the app's types already describe. On the web these classes
+// are never constructed (the browser's own context wins), so the ambient host
+// externs are never referenced at runtime there.
 
 // Node kinds (native/audio_host.mm NodeKind).
 const NODE_GAIN = 1

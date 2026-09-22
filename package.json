@@ -1,6 +1,6 @@
 {
   "name": "@geastack/native-webgl-angle",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Typed native WebGL compatibility layer backed by ANGLE/Metal",
   "license": "Apache-2.0",
   "repository": {
@@ -57,10 +57,10 @@
   },
   "peerDependencies": {
     "three": "^0.185.0",
-    "@geastack/compiler": "^1.0.15"
+    "@geastack/compiler": "^1.0.17"
   },
   "devDependencies": {
-    "@geastack/compiler": "^1.0.15",
+    "@geastack/compiler": "^1.0.17",
     "@geastack/core": "^0.1.23",
     "@geastack/engine": "^0.1.5",
     "@types/three": "^0.185.0",

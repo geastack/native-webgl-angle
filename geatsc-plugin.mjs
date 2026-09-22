@@ -1531,6 +1531,57 @@ const ambientTypeRealizations = {
     type: "NativeWebGLCanvas",
     importedFrom: "@geastack/native-webgl-angle/nativeWebGL",
   },
+  // Web Audio, for the same reason again. `nativeAudioHost.ts` IS this host's
+  // Web Audio implementation (`audio_host.mm` behind it), so an app's sound
+  // design is written against the browser's own names -- `AudioContext`,
+  // `GainNode`, `AudioBuffer` -- exactly as it is for the web, and every value
+  // those positions ever hold natively is one of these classes
+  // (`createNativeAudioContext()` and what its context creates). Without the
+  // realization an app had to invent structural `*Like` twins of the browser
+  // interfaces, and a class instance stored into such an interface slot is a
+  // slice (the compiler refuses it): the interface is a record, the value is a
+  // class. The constructors stay absent as values: an app probes
+  // `globalThis.AudioContext` and falls back to `createNativeAudioContext()`.
+  AudioContext: {
+    type: "NativeAudioContext",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  BaseAudioContext: {
+    type: "NativeAudioContext",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioNode: {
+    type: "NativeAudioNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioDestinationNode: {
+    type: "NativeAudioDestination",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioParam: {
+    type: "NativeAudioParam",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  GainNode: {
+    type: "NativeGainNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  BiquadFilterNode: {
+    type: "NativeBiquadFilterNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  OscillatorNode: {
+    type: "NativeOscillatorNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioBuffer: {
+    type: "NativeAudioBuffer",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioBufferSourceNode: {
+    type: "NativeBufferSourceNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
 };
 
 const object3DClearSource =
@@ -10250,6 +10301,16 @@ export default {
           "ImageBitmap",
           "OffscreenCanvas",
           "VideoFrame",
+          // The browser's worker/window global. This package's own animation
+          // driver (`src/nativeWebGLAnimation.ts`) exists BECAUSE the host has
+          // no `self` to hand three's `animation.setContext(self)`, and that
+          // `if (typeof self !== 'undefined')` guard in `WebGLRenderer.js` is
+          // three's only use of it. Left unstated, the guard was live, the
+          // read bound the ambient `self: Window & typeof globalThis`, and the
+          // program emitted lib.dom's whole `Window` layout -- `Navigator`,
+          // `History`, `ScreenOrientation` handles no host registers -- for a
+          // value nothing ever reads.
+          "self",
         ],
         embeddedHostFunctions,
         embeddedHostFunctionReturnTypes,
