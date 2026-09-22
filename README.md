@@ -1,7 +1,7 @@
 # Native WebGL ANGLE
 
 `@geastack/native-webgl-angle` owns the native WebGL compatibility layer used by
-the real Three.js macOS path.
+the Three.js macOS path.
 
 ## Installation
 
