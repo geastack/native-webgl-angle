@@ -39,7 +39,7 @@ for (const entry of Object.values(manifest.exports)) {
 for (const name of Object.keys(files)) {
   assert.match(
     name,
-    /^(src\/|native\/|test\/[a-z-]+-scene\.ts$|geatsc-plugin(?:-uploads|-uniforms|-instancing|-batched-probe)?\.mjs$|package\.json$|README\.md$|LICENSE$)/,
+    /^(src\/|native\/|test\/[a-z-]+-scene\.ts$|geatsc-plugin(?:-uploads|-uniforms|-instancing|-batched-probe|-audio)?\.mjs$|package\.json$|README\.md$|LICENSE$)/,
   );
 }
 for (const required of [

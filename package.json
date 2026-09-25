@@ -21,6 +21,7 @@
     "./nativeWebXRManager": "./src/nativeWebXRManager.ts",
     "./troika-three-text": "./src/troika-three-text.ts",
     "./geatsc-plugin": "./geatsc-plugin.mjs",
+    "./geatsc-plugin-audio": "./geatsc-plugin-audio.mjs",
     "./native/*": "./native/*",
     "./package.json": "./package.json",
     "./native-text-types": "./src/text/native-text-types.ts",
@@ -33,6 +34,7 @@
     "src",
     "native",
     "geatsc-plugin.mjs",
+    "geatsc-plugin-audio.mjs",
     "geatsc-plugin-uploads.mjs",
     "geatsc-plugin-uniforms.mjs",
     "geatsc-plugin-instancing.mjs",
@@ -49,7 +51,7 @@
     "test:host-effects": "node test/native-host-effects-contract.test.mjs",
     "test:allocation-contracts": "node test/render-sort-contract.test.mjs && node test/upload-array-contract.test.mjs && node test/draw-dispatch-contract.test.mjs && node test/native-upload-transport.test.mjs && node test/fixed-uniform-contract.test.mjs && node test/uniform-binding-contract.test.mjs && node test/buffer-streaming-contract.test.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "node test/native-blending-contract.test.mjs && node test/native-transform-contract.test.mjs && node test/troika-three-text.test.mjs && node test/typed-void-contract.test.mjs && node test/instancing-transport-contract.test.mjs && node test/automatic-instancing-contract.test.mjs && node test/jsdoc-fold-contract.test.mjs",
+    "test": "node test/native-blending-contract.test.mjs && node test/native-transform-contract.test.mjs && node test/troika-three-text.test.mjs && node test/typed-void-contract.test.mjs && node test/instancing-transport-contract.test.mjs && node test/automatic-instancing-contract.test.mjs && node test/jsdoc-fold-contract.test.mjs && node test/audio-plugin-entry.test.mjs",
     "test:package": "node --experimental-vm-modules test/package.test.mjs"
   },
   "dependencies": {

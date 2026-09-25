@@ -73,7 +73,9 @@ function nativeVoidMemberCallContract(
   });
 }
 
-const hostFunctions = [
+// The WebGL host (native/angle_webgl_host.mm): [TS name, C name, return type,
+// extern declaration].
+const webglHostFunctions = [
   [
     "threeWebGLVertexAttribDivisor",
     "gea_three_webgl_vertex_attrib_divisor",
@@ -762,9 +764,13 @@ const hostFunctions = [
     "double",
     'extern "C" double gea_three_webgl_get_error();',
   ],
+];
 
-  // Audio host (native/audio_host.mm) — the minimal Web-Audio-like surface a
-  // three.js app's sound design uses, driven through src/nativeAudioHost.ts.
+// Audio host (native/audio_host.mm) — the minimal Web-Audio-like surface a
+// three.js app's sound design uses, driven through src/nativeAudioHost.ts.
+// Exported for geatsc-plugin-audio.mjs, which states these same rows for a
+// build without the WebGL host.
+export const audioHostFunctions = [
   [
     "threeAudioSupported",
     "gea_three_audio_supported",
@@ -857,6 +863,8 @@ const hostFunctions = [
   ],
 ];
 
+const hostFunctions = [...webglHostFunctions, ...audioHostFunctions];
+
 const embeddedHostFunctions = Object.fromEntries(
   hostFunctions.map(([tsName, cppName]) => [tsName, cppName]),
 );
@@ -865,20 +873,33 @@ const embeddedHostFunctionReturnTypes = Object.fromEntries(
 );
 const embeddedHostNoThrowFunctions = hostFunctions.map(([tsName]) => tsName);
 const hostDeclarationIncludes = ['#include "gea_runtime.h"', "#include <span>"];
+// What a unit must declare before it names a host function's C spelling.
+export const hostExternDeclarationOf = ([, cppName, , declaration]) => [
+  ...hostDeclarationIncludes,
+  // Only the AppKit attach entry takes an Apple object. GL/audio calls are
+  // shared with the UWP host and must not pull Objective-C into its units.
+  ...(cppName === "gea_three_webgl_attach"
+    ? ['#include "gea/apple/native_bridge.h"']
+    : []),
+  declaration,
+];
 const hostExternDeclarations = Object.fromEntries(
-  hostFunctions.map(([, cppName, , declaration]) => [
-    cppName,
-    [
-      ...hostDeclarationIncludes,
-      // Only the AppKit attach entry takes an Apple object. GL/audio calls are
-      // shared with the UWP host and must not pull Objective-C into its units.
-      ...(cppName === "gea_three_webgl_attach"
-        ? ['#include "gea/apple/native_bridge.h"']
-        : []),
-      declaration,
-    ],
-  ]),
+  hostFunctions.map((row) => [row[1], hostExternDeclarationOf(row)]),
 );
+// The host functions that take the program's own array storage, and those
+// that take a snapshot of it, read off their declarations.
+export const hostNativeArrayFunctionsOf = (rows) =>
+  rows
+    .filter(([, , , declaration]) =>
+      declaration.includes("HostNumericArgument<"),
+    )
+    .map(([, cppName]) => cppName);
+export const hostArraySnapshotFunctionsOf = (rows) =>
+  rows
+    .filter(([, , , declaration]) =>
+      declaration.includes("std::span<const double>"),
+    )
+    .map(([, cppName]) => cppName);
 const voidHostFunctions = new Set(
   hostFunctions
     .filter(([, , returnType]) => returnType === "void")
@@ -1444,6 +1465,61 @@ const runtimeMemberReads = [...webglConstants].map(([name, value]) => ({
     directWebGLReceivers.has(receiverName(context)) ? String(value) : null,
 }));
 
+// Web Audio, for the reason the WebGL context below is realized.
+// `nativeAudioHost.ts` IS this host's Web Audio implementation
+// (`audio_host.mm` behind it), so an app's sound design is written against the browser's own names -- `AudioContext`,
+// `GainNode`, `AudioBuffer` -- exactly as it is for the web, and every value
+// those positions ever hold natively is one of these classes
+// (`createNativeAudioContext()` and what its context creates). Without the
+// realization an app had to invent structural `*Like` twins of the browser
+// interfaces, and a class instance stored into such an interface slot is a
+// slice (the compiler refuses it): the interface is a record, the value is a
+// class. The constructors stay absent as values: an app probes
+// `globalThis.AudioContext` and falls back to `createNativeAudioContext()`.
+// Exported for geatsc-plugin-audio.mjs, as the audio host functions are.
+export const audioAmbientTypeRealizations = {
+  AudioContext: {
+    type: "NativeAudioContext",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  BaseAudioContext: {
+    type: "NativeAudioContext",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioNode: {
+    type: "NativeAudioNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioDestinationNode: {
+    type: "NativeAudioDestination",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioParam: {
+    type: "NativeAudioParam",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  GainNode: {
+    type: "NativeGainNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  BiquadFilterNode: {
+    type: "NativeBiquadFilterNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  OscillatorNode: {
+    type: "NativeOscillatorNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioBuffer: {
+    type: "NativeAudioBuffer",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+  AudioBufferSourceNode: {
+    type: "NativeBufferSourceNode",
+    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
+  },
+};
+
 // three's own `WebGLRenderer` states the context it holds as an AMBIENT
 // BROWSER type -- `WebGLRenderingContext` in `@types/three`'s (stale, WebGL1)
 // declaration for the internal renderer submodules' `_gl` parameters, and the
@@ -1531,57 +1607,7 @@ const ambientTypeRealizations = {
     type: "NativeWebGLCanvas",
     importedFrom: "@geastack/native-webgl-angle/nativeWebGL",
   },
-  // Web Audio, for the same reason again. `nativeAudioHost.ts` IS this host's
-  // Web Audio implementation (`audio_host.mm` behind it), so an app's sound
-  // design is written against the browser's own names -- `AudioContext`,
-  // `GainNode`, `AudioBuffer` -- exactly as it is for the web, and every value
-  // those positions ever hold natively is one of these classes
-  // (`createNativeAudioContext()` and what its context creates). Without the
-  // realization an app had to invent structural `*Like` twins of the browser
-  // interfaces, and a class instance stored into such an interface slot is a
-  // slice (the compiler refuses it): the interface is a record, the value is a
-  // class. The constructors stay absent as values: an app probes
-  // `globalThis.AudioContext` and falls back to `createNativeAudioContext()`.
-  AudioContext: {
-    type: "NativeAudioContext",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  BaseAudioContext: {
-    type: "NativeAudioContext",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  AudioNode: {
-    type: "NativeAudioNode",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  AudioDestinationNode: {
-    type: "NativeAudioDestination",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  AudioParam: {
-    type: "NativeAudioParam",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  GainNode: {
-    type: "NativeGainNode",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  BiquadFilterNode: {
-    type: "NativeBiquadFilterNode",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  OscillatorNode: {
-    type: "NativeOscillatorNode",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  AudioBuffer: {
-    type: "NativeAudioBuffer",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
-  AudioBufferSourceNode: {
-    type: "NativeBufferSourceNode",
-    importedFrom: "@geastack/native-webgl-angle/nativeAudioHost",
-  },
+  ...audioAmbientTypeRealizations,
 };
 
 const object3DClearSource =
@@ -10465,16 +10491,8 @@ export default {
         embeddedHostFunctions,
         embeddedHostFunctionReturnTypes,
         embeddedHostNoThrowFunctions,
-        hostNativeArrayFunctions: hostFunctions
-          .filter(([, , , declaration]) =>
-            declaration.includes("HostNumericArgument<"),
-          )
-          .map(([, cppName]) => cppName),
-        hostArraySnapshotFunctions: hostFunctions
-          .filter(([, , , declaration]) =>
-            declaration.includes("std::span<const double>"),
-          )
-          .map(([, cppName]) => cppName),
+        hostNativeArrayFunctions: hostNativeArrayFunctionsOf(hostFunctions),
+        hostArraySnapshotFunctions: hostArraySnapshotFunctionsOf(hostFunctions),
         hostExternDeclarations,
         runtimeMemberCalls,
         runtimeMemberReads,
