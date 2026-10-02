@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import path, { join } from 'node:path'
+import path, { join, dirname } from 'node:path'
 import {fileURLToPath, pathToFileURL} from 'node:url'
 import {execFileSync} from 'node:child_process'
 import {nativeModuleResolution, compilerFingerprint} from './native-module-resolution.mjs'
 import { nativeTestOutDir } from './out-dir.mjs'
+import { refusalSites } from './refusal-report.mjs'
+import { noGlHostStubs } from './no-gl-host-stubs.mjs'
 const runtimeInclude = dirname(fileURLToPath(import.meta.resolve('@geastack/compiler/src/targets/cpp/runtime/gea_runtime_builtins.cpp')))
 const packageDir = fileURLToPath(new URL('../',import.meta.url))
 process.env.GEATSC2_WEBGL_PLUGIN = path.join(packageDir,'geatsc-plugin.mjs')
@@ -41,9 +43,9 @@ console.log(a.onBeforeRender === b.onBeforeRender);
 `;
 console.log('Canonical compiler provenance:',compilerFingerprint())
 const result=compile({rootFileNames:[entry],projectFileName:null,moduleResolution:nativeModuleResolution(),sourceOverlay:new Map([[entry,source]])})
-assert.ok(result.certificate && result.source, JSON.stringify({diagnostics:result.diagnostics,refusals:result.refusals.filter(x=>x.stage!=='census'),census:result.refusals.filter(x=>x.stage==='census').slice(0,8),emission:result.emissionRefusals,blockers:result.loweringBlockers}))
+assert.ok(result.certificate && result.source, JSON.stringify({diagnostics:result.diagnostics.diagnostics,refusals:refusalSites(result,result.refusals.filter(x=>x.stage!=='census')),census:result.refusals.filter(x=>x.stage==='census').slice(0,8),emission:result.emissionRefusals,blockers:result.loweringBlockers}))
 const binary=join(nativeTestOutDir(), 'instanced-mesh-contract-test')
-fs.writeFileSync(binary+'.cpp',result.source+'\nint main(){__gea_top_level();}\n')
+fs.writeFileSync(binary+'.cpp',result.source+'\n'+noGlHostStubs(result.source)+'\nint main(){__gea_top_level();}\n')
 if(process.argv.includes('--emit-only')) process.exit(0)
 // Quoted includes search the generated file's directory before -I. Refresh
 // canonical runtime headers there so an earlier fixture cannot shadow them.

@@ -1,6 +1,6 @@
 {
   "name": "@geastack/native-webgl-angle",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Typed native WebGL compatibility layer backed by ANGLE/Metal",
   "license": "Apache-2.0",
   "repository": {
@@ -53,7 +53,7 @@
     "test:package": "node --experimental-vm-modules test/package.test.mjs"
   },
   "dependencies": {
-    "@geastack/apple": ">=0.2.8"
+    "@geastack/apple": "^0.2.13"
   },
   "peerDependencies": {
     "three": "^0.185.0",
@@ -65,6 +65,8 @@
     "@geastack/engine": "^0.1.5",
     "@types/three": "^0.185.0",
     "three": "^0.185.0",
-    "typescript": "latest"
+    "troika-three-text": "^0.52.4",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0"
   }
 }

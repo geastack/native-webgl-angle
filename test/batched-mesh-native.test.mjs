@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import path from 'node:path'
+import path, { dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { nativeModuleResolution, compilerFingerprint } from './native-module-resolution.mjs'
 import { nativeTestOutDir } from './out-dir.mjs'
+import { refusalSites } from './refusal-report.mjs'
+import { noGlHostStubs } from './no-gl-host-stubs.mjs'
 const runtimeInclude = dirname(fileURLToPath(import.meta.resolve('@geastack/compiler/src/targets/cpp/runtime/gea_runtime_builtins.cpp')))
 
 const packageDir = fileURLToPath(new URL('..', import.meta.url))
@@ -124,17 +126,13 @@ assert.ok(result.certificate && result.source, JSON.stringify({
   certification: { certified: result.certification?.certified, refusals: result.certification?.refusals },
   diagnostics: result.diagnostics.diagnostics.map(item => ({ message: item.message, location: item.location })).slice(0, 12),
   blockers: result.loweringBlockers?.slice(0, 6), emission: result.emissionRefusals?.slice(0, 6),
-  refusals: result.refusals.filter(item => item.stage !== 'census').map(item => ({
-    ...item,
-    operation: result.graph.operations.get(item.owner),
-    sourceFile: result.sourceFileNames.get(item.owner.split('|')[2]),
-  })),
+  refusals: refusalSites(result, result.refusals.filter(item => item.stage !== 'census')),
   census: result.refusals.filter(item => item.stage === 'census').slice(0, 12),
   preflight: result.preflight.obligations.filter(item => !item.optional && item.status !== 'satisfied').slice(0, 12),
 }))
 const binary = path.join(nativeTestOutDir(), callbacks ? 'batched-mesh-callback-test' : 'batched-mesh-contract-test')
 const cpp = `${binary}.cpp`
-fs.writeFileSync(cpp, `${result.source}\nint main() {
+fs.writeFileSync(cpp, `${result.source}\n${noGlHostStubs(result.source)}\nint main() {
   try { __gea_top_level(); }
   catch (const gea::Value& error) {
     std::fprintf(stderr, "%s\\n", gea::host::runtimeErrorString(error).c_str());

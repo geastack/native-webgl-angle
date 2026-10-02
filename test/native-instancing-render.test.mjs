@@ -11,9 +11,17 @@ const host = fs.readFileSync(path.join(packageDir, 'native/angle_webgl_host.mm')
 const start = host.indexOf('extern "C" void gea_three_webgl_vertex_attrib_divisor(')
 const end = host.indexOf('extern "C" double gea_three_webgl_get_error()', start)
 assert.ok(start >= 0 && end > start)
+// The test needs a real ANGLE (it selects ANGLE's Metal backend through
+// eglGetPlatformDisplayEXT), which Mesa's libEGL does not provide. macOS
+// defaults to the ANGLE bundled in Visual Studio Code's Electron framework;
+// anywhere else, point GEA_ANGLE_EGL and GEA_ANGLE_GLES at an ANGLE build.
 const directory = '/Applications/Visual Studio Code.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries'
 const egl = process.env.GEA_ANGLE_EGL ?? path.join(directory, 'libEGL.dylib')
 const gles = process.env.GEA_ANGLE_GLES ?? path.join(directory, 'libGLESv2.dylib')
+if (!fs.existsSync(egl) || !fs.existsSync(gles)) {
+  console.log(`SKIP native instancing render: no ANGLE libraries at ${egl} / ${gles}; set GEA_ANGLE_EGL and GEA_ANGLE_GLES`)
+  process.exit(0)
+}
 const binary = join(nativeTestOutDir(), 'native-instancing-render-test')
 const source = `
 #include <algorithm>

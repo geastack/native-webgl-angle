@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import path, { join } from 'node:path'
+import path, { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { nativeUniformBindingHelpers } from '../geatsc-plugin-uniforms.mjs'
 import { nativeTestOutDir } from './out-dir.mjs'

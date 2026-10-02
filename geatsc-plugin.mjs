@@ -1719,6 +1719,31 @@ function ${name}( template, input ) {
 
 }`;
 
+/**
+ * `array.constructor.name` over the nine typed-array kinds, spelled as the
+ * `instanceof` dispatch the native typed-array carriers lower. A `.constructor`
+ * read off a sum of typed arrays names a class evaluation no carrier holds.
+ */
+export const nativeTypedArrayName = `/**
+ * @param {${nativeTypedArrayType}} array
+ * @return {string}
+ */
+function typedArrayTypeName( array ) {
+
+\tif ( array instanceof Int8Array ) return 'Int8Array';
+\tif ( array instanceof Uint8Array ) return 'Uint8Array';
+\tif ( array instanceof Uint8ClampedArray ) return 'Uint8ClampedArray';
+\tif ( array instanceof Int16Array ) return 'Int16Array';
+\tif ( array instanceof Uint16Array ) return 'Uint16Array';
+\tif ( array instanceof Int32Array ) return 'Int32Array';
+\tif ( array instanceof Uint32Array ) return 'Uint32Array';
+\tif ( array instanceof Float32Array ) return 'Float32Array';
+\tif ( array instanceof Float64Array ) return 'Float64Array';
+
+\tthrow new Error( 'Unsupported typed array.' );
+
+}`;
+
 const replaceOne = (text, before, after, fileName, description) => {
   if (!text.includes(before))
     throw new Error(
@@ -3292,6 +3317,17 @@ function createColorManagement() {`,
       fileName,
       "ColorManagement typed built-in definitions close",
     );
+    // `define` merges a table of definitions into `spaces`. An untyped
+    // parameter is `any`, which made `Object.assign( this.spaces, colorSpaces )`
+    // copy a dynamic object into a typed dictionary; stating the table's type
+    // is what every caller already passes.
+    transformed = replaceOne(
+      transformed,
+      "\t\tdefine: function ( colorSpaces ) {",
+      "\t\t/** @param {Record<string, NativeColorSpaceDefinition>} colorSpaces */\n\t\tdefine: function ( colorSpaces ) {",
+      fileName,
+      "ColorManagement.define parameter type",
+    );
     const propertyFunction = /^(\s*)([A-Za-z_$][A-Za-z0-9_$]*): function \(/gm;
     const matches = transformed.match(propertyFunction)?.length ?? 0;
     if (matches !== 13)
@@ -3427,6 +3463,8 @@ function createColorManagement() {`,
       "class BufferGeometry extends EventDispatcher {",
       `${nativeTypedArrayFactory("createTypedArrayWithLength", "number")}
 
+${nativeTypedArrayName}
+
 /** @param {BufferAttribute|InterleavedBufferAttribute} attribute @param {number} index @param {number} x @param {number} y @param {number} z */
 function setNativeAttributeXYZ( attribute, index, x, y, z ) {
 
@@ -3444,6 +3482,13 @@ function setNativeAttributeXYZ( attribute, index, x, y, z ) {
 class BufferGeometry extends EventDispatcher {`,
       fileName,
       "BufferGeometry typed-array factory",
+    );
+    transformed = replaceOne(
+      transformed,
+      'type: index.array.constructor.name,',
+      'type: typedArrayTypeName( index.array ),',
+      fileName,
+      'BufferGeometry typed-array name',
     );
     for (const attributeName of [
       "positionAttribute",
@@ -3537,9 +3582,16 @@ class BufferGeometry extends EventDispatcher {`,
     transformed = replaceOne(
       transformed,
       "class InterleavedBuffer {",
-      `${nativeTypedArrayFactory("createTypedArrayFromBuffer", "ArrayBuffer")}\n\nclass InterleavedBuffer {`,
+      `${nativeTypedArrayFactory("createTypedArrayFromBuffer", "ArrayBuffer")}\n\n${nativeTypedArrayName}\n\nclass InterleavedBuffer {`,
       fileName,
       "InterleavedBuffer typed-array factory",
+    );
+    transformed = replaceOne(
+      transformed,
+      'type: this.array.constructor.name,',
+      'type: typedArrayTypeName( this.array ),',
+      fileName,
+      'InterleavedBuffer typed-array name',
     );
     transformed = replaceOne(
       transformed,
@@ -3567,9 +3619,16 @@ class BufferGeometry extends EventDispatcher {`,
     transformed = replaceOne(
       transformed,
       "class InterleavedBufferAttribute {",
-      `${nativeTypedArrayFactory("createTypedArrayFromValues", "number[]")}\n\nclass InterleavedBufferAttribute {`,
+      `${nativeTypedArrayFactory("createTypedArrayFromValues", "number[]")}\n\n${nativeTypedArrayName}\n\nclass InterleavedBufferAttribute {`,
       fileName,
       "InterleavedBufferAttribute typed-array factory",
+    );
+    transformed = replaceOne(
+      transformed,
+      'type: this.array.constructor.name,',
+      'type: typedArrayTypeName( this.array ),',
+      fileName,
+      'InterleavedBufferAttribute typed-array name',
     );
     transformed = replaceOne(
       transformed,
@@ -4376,6 +4435,37 @@ import { Vector3 } from '../math/Vector3.js';
 import { Euler } from '../math/Euler.js';`,
       fileName,
       "Material exact setValues value imports",
+    );
+    // `toJSON` serializes whichever colour fields a subclass declared, behind
+    // the duck test `x.isColor`. The field census sums every writer of a
+    // colour field (`Color`, and the number/string `setValues` stores), so the
+    // duck test leaves the sum un-narrowed and `getHex` is called on it.
+    // `instanceof Color` is the same test over the one class that has the
+    // method, and narrows the sum to that arm.
+    for (const field of ["color", "sheenColor", "emissive", "specular", "specularColor"]) {
+      transformed = replaceOne(
+        transformed,
+        `if ( this.${field} && this.${field}.isColor ) data.${field} = this.${field}.getHex();`,
+        `if ( this.${field} instanceof Color ) data.${field} = this.${field}.getHex();`,
+        fileName,
+        `Material.toJSON ${field} narrowing`,
+      );
+    }
+    for (const field of ["blendColor"]) {
+      transformed = replaceOne(
+        transformed,
+        `if ( this.${field} && this.${field}.isColor ) data.${field} = this.${field}.getHex();`,
+        `if ( this.${field} instanceof Color ) data.${field} = this.${field}.getHex();`,
+        fileName,
+        `Material.toJSON ${field} narrowing`,
+      );
+    }
+    transformed = replaceOne(
+      transformed,
+      "if ( this.attenuationColor !== undefined ) data.attenuationColor = this.attenuationColor.getHex();",
+      "if ( this.attenuationColor instanceof Color ) data.attenuationColor = this.attenuationColor.getHex();",
+      fileName,
+      "Material.toJSON attenuationColor narrowing",
     );
     transformed = replaceOne(
       transformed,
@@ -9718,6 +9808,20 @@ class PMREMGenerator {`,
     }
   }
   if (normalized.endsWith("/three/src/core/BufferAttribute.js")) {
+    transformed = replaceOne(
+      transformed,
+      "class BufferAttribute extends EventDispatcher {",
+      `${nativeTypedArrayName}\n\nclass BufferAttribute extends EventDispatcher {`,
+      fileName,
+      "BufferAttribute typed-array type name helper",
+    );
+    transformed = replaceOne(
+      transformed,
+      "type: this.array.constructor.name,",
+      "type: typedArrayTypeName( this.array ),",
+      fileName,
+      "BufferAttribute toJSON typed-array type name",
+    );
     const rawCopyArrayParameter =
       "@param {(TypedArray|Array)} array - The array to copy.";
     const realizedCopyArrayParameter =
@@ -9979,6 +10083,19 @@ class Texture extends EventDispatcher {`,
       "Plane normal-matrix input",
     );
   }
+  if (normalized.endsWith("/three/src/math/Matrix3.js")) {
+    // `x.isVector2` is a duck test on a `number|Vector2` parameter. The checker
+    // does not narrow a union by the presence of a property one arm lacks, so
+    // the `else` arm kept the whole union where `set` takes numbers. The
+    // `typeof` form accepts exactly the same two inputs and narrows both arms.
+    transformed = replaceOne(
+      transformed,
+      "\tmakeTranslation( x, y ) {\n\n\t\tif ( x.isVector2 ) {",
+      "\tmakeTranslation( x, y ) {\n\n\t\tif ( typeof x !== 'number' ) {",
+      fileName,
+      "Matrix3.makeTranslation vector narrowing",
+    );
+  }
   if (normalized.endsWith("/three/src/math/Matrix4.js")) {
     transformed = replaceOne(
       transformed,
@@ -9986,6 +10103,20 @@ class Texture extends EventDispatcher {`,
       `@param {Array<number>|${nativeTypedArrayType}} array - The matrix elements in column-major order.`,
       fileName,
       "Matrix4.fromArray native array input",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\tsetPosition( x, y, z ) {\n\n\t\tconst te = this.elements;\n\n\t\tif ( x.isVector3 ) {",
+      "\tsetPosition( x, y, z ) {\n\n\t\tconst te = this.elements;\n\n\t\tif ( typeof x !== 'number' ) {",
+      fileName,
+      "Matrix4.setPosition vector narrowing",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\tmakeTranslation( x, y, z ) {\n\n\t\tif ( x.isVector3 ) {",
+      "\tmakeTranslation( x, y, z ) {\n\n\t\tif ( typeof x !== 'number' ) {",
+      fileName,
+      "Matrix4.makeTranslation vector narrowing",
     );
     transformed = replaceOne(
       transformed,
@@ -10198,7 +10329,9 @@ class Texture extends EventDispatcher {`,
     transformed = replaceOne(
       transformed,
       "class Source {",
-      `/** @typedef {Int8Array|Uint8Array|Uint8ClampedArray|Int16Array|Uint16Array|Int32Array|Uint32Array|Float32Array|Float64Array} NativeTextureData */
+      `${nativeTypedArrayName}
+
+/** @typedef {Int8Array|Uint8Array|Uint8ClampedArray|Int16Array|Uint16Array|Int32Array|Uint32Array|Float32Array|Float64Array} NativeTextureData */
 /** @typedef {{ data?: NativeTextureData, width?: number, height?: number, depth?: number }} NativeTextureImage */
 /** @typedef {NativeTextureImage|NativeTextureImage[]|null} NativeTextureSourceData */
 class Source {
@@ -10207,6 +10340,13 @@ class Source {
 \tdata = null;`,
       fileName,
       "Source native image types",
+    );
+    transformed = replaceOne(
+      transformed,
+      "type: image.data.constructor.name",
+      "type: typedArrayTypeName( image.data )",
+      fileName,
+      "Source serializeImage typed-array type name",
     );
     transformed = transformed.replace(
       "@param {any} [data=null] - The data definition of a texture.",
@@ -10248,6 +10388,16 @@ class Source {
       "/** @param {NativeTextureImage} image */\nfunction serializeImage( image ) {",
       fileName,
       "Source image serialization input",
+    );
+    // `let url;` declares an evolving type: the checker reads each branch's
+    // assignment, but the cube branch's `url = []` is an evolving `any[]` the
+    // program cannot type. Name the union the two branches produce.
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tlet url;\n",
+      "\t\t\t/** @type {ReturnType<typeof serializeImage>|Array<ReturnType<typeof serializeImage>>} */\n\t\t\tlet url;\n",
+      fileName,
+      "Source.toJSON serialized url type",
     );
   }
   // An unannotated override receives a precise declaration-overlay parameter,

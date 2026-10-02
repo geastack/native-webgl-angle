@@ -10,7 +10,7 @@
       "ES2022",
       "DOM"
     ],
-    "ignoreDeprecations": "6.0",
+    "ignoreDeprecations": "5.0",
     "noEmit": true
   },
   "include": [

@@ -911,6 +911,17 @@ ${batchedMeshHelpers}`,
     'BatchedMesh setMatrixAt/getMatrixAt native texture reads',
   )
 
+  // `getColorAt` takes `Color|Vector4` and tells them apart with the duck test
+  // `color.isVector4`, which leaves the sum un-narrowed for the `setRGB` that
+  // only `Color` has. `instanceof Vector4` is the same test over the class.
+  transformed = replaceOne(
+    transformed,
+    "import { Color } from '../math/Color.js';",
+    "import { Color } from '../math/Color.js';\nimport { Vector4 } from '../math/Vector4.js';",
+    fileName,
+    'BatchedMesh Vector4 import for getColorAt narrowing',
+  )
+
   // 9. `setColorAt`/`getColorAt`: `_colorsTexture` is nullable and lazily
   // created; narrow to a local before reading `.image.data`.
   transformed = replaceOne(
@@ -989,7 +1000,7 @@ ${batchedMeshHelpers}`,
 \t\tconst colorsTexture = this._colorsTexture;
 \t\tif ( colorsTexture === null ) {
 
-\t\t\tif ( color.isVector4 ) {
+\t\t\tif ( color instanceof Vector4 ) {
 
 \t\t\t\treturn color.set( 1, 1, 1, 1 );
 

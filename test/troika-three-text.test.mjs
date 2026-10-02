@@ -6,12 +6,22 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const packageDir = path.dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
-const repoRoot = path.dirname(packageDir)
-const threeDir = path.join(repoRoot, 'examples', 'node_modules', 'three')
+// Three.js, troika-three-text and Vite come from this package's own
+// devDependencies, so `npm install` here is enough.
+const packageRoot = (name) => {
+  let directory = path.dirname(fileURLToPath(import.meta.resolve(name)))
+  while (!fs.existsSync(path.join(directory, 'package.json')) || JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8')).name !== name) {
+    const parent = path.dirname(directory)
+    assert.notEqual(parent, directory, `cannot locate the ${name} package root`)
+    directory = parent
+  }
+  return directory
+}
+const threeDir = packageRoot('three')
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gea-native-troika-test-'))
 
 try {
-  assert.ok(fs.existsSync(threeDir), 'install the Examples workspace dependencies before running this test')
+  assert.ok(fs.existsSync(threeDir), 'run `npm install` in the package before running this test')
   const packageJson = JSON.parse(fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'))
   assert.equal(packageJson.exports['./troika-three-text'], './src/troika-three-text.ts')
 
@@ -136,7 +146,7 @@ console.log(JSON.stringify({
   fs.symlinkSync(packageDir, path.join(geastackDir, 'native-webgl-angle'), 'dir')
   fs.symlinkSync(threeDir, path.join(modulesDir, 'three'), 'dir')
   fs.symlinkSync(
-    path.join(repoRoot, 'examples', 'node_modules', 'troika-three-text'),
+    packageRoot('troika-three-text'),
     path.join(modulesDir, 'troika-three-text'),
     'dir',
   )
@@ -144,13 +154,13 @@ console.log(JSON.stringify({
   fs.writeFileSync(routeEntry, "export { Text } from 'troika-three-text'\n")
 
   const { build } = await import(
-    pathToFileURL(path.join(repoRoot, 'examples', 'node_modules', 'vite', 'dist', 'node', 'index.js')).href
+    pathToFileURL(path.join(packageRoot('vite'), 'dist', 'node', 'index.js')).href
   )
   const {
     geaAppleNativeModuleAliases,
     geaModuleGraphPlugins,
   } = await import(
-    pathToFileURL(path.join(repoRoot, 'core', 'packages', 'core', 'scripts', 'gea-vite-module-graph-plugin.mjs')).href
+    import.meta.resolve('@geastack/core/scripts/gea-vite-module-graph-plugin.mjs')
   )
 
   async function buildRoute(name, aliases) {
@@ -176,7 +186,7 @@ console.log(JSON.stringify({
 
   const browserResolution = await buildRoute('browser', [])
   assert.match(browserResolution, /node_modules\/troika-three-text\//, 'browser builds must keep upstream Troika')
-  assert.doesNotMatch(browserResolution, /native-webgl-angle/)
+  assert.doesNotMatch(browserResolution, /native-webgl-angle\/src\//, 'browser builds must not resolve to the native facade')
 
   const nativeResolution = await buildRoute(
     'native',

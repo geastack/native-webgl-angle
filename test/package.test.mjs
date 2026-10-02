@@ -26,7 +26,7 @@ with tarfile.open(sys.argv[1]) as archive:
 const manifest = JSON.parse(files["package.json"]);
 assert.equal(manifest.private, undefined);
 assert.equal(manifest.publishConfig.access, "public");
-assert.equal(manifest.dependencies["@geastack/apple"], ">=0.2.8");
+assert.equal(manifest.dependencies["@geastack/apple"], "^0.2.13");
 assert.equal(manifest.peerDependencies["@geastack/compiler"], "^1.0.17");
 assert.equal(manifest.peerDependencies.three, "^0.185.0");
 assert.equal(manifest.exports["./native/*"], "./native/*");

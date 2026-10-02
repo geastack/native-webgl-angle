@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import plugin from '../geatsc-plugin.mjs'
+import { nativeTestOutDir } from './out-dir.mjs'
 
 import { compile } from '@geastack/compiler/dist/compiler.js'
 import { createRequire } from 'node:module'
@@ -104,14 +105,15 @@ const code = result.source.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"
 const dynamicSites = code
   .split('\n')
   .filter((line) => /\bValue\s*::\s*box\w*\s*(?:<|\()|\bunbox\w*\s*(?:<|\()|\bgea\s*::\s*Value\b|\bgea_cpp_value\b/.test(line))
-const binary = resolve(compiler, 'measurements/shader-parameter-inference')
+const runtimeInclude = dirname(fileURLToPath(import.meta.resolve('@geastack/compiler/src/targets/cpp/runtime/gea_runtime_builtins.cpp')))
+const binary = join(nativeTestOutDir(), 'shader-parameter-inference')
 execFileSync(
   'clang++',
   [
     '-std=c++20',
     '-O1',
     '-fsanitize=address,undefined',
-    `-I${resolve(compiler, 'src/targets/cpp/runtime')}`,
+    `-I${runtimeInclude}`,
     '-x',
     'c++',
     '-',
@@ -120,7 +122,7 @@ execFileSync(
   ],
   {
     input: `${result.source}\nint main() { __gea_top_level(); }\n`,
-    env: { ...process.env, TMPDIR: resolve(compiler, 'measurements') }
+    env: { ...process.env, TMPDIR: nativeTestOutDir() }
   }
 )
 assert.equal(
