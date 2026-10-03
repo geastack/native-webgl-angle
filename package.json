@@ -57,12 +57,12 @@
   },
   "peerDependencies": {
     "three": "^0.185.0",
-    "@geastack/compiler": "^1.0.17"
+    "@geastack/compiler": "^1.0.21"
   },
   "devDependencies": {
-    "@geastack/compiler": "^1.0.17",
-    "@geastack/core": "^0.1.23",
-    "@geastack/engine": "^0.1.5",
+    "@geastack/compiler": "^1.0.21",
+    "@geastack/core": "^0.1.35",
+    "@geastack/engine": "^0.1.11",
     "@types/three": "^0.185.0",
     "three": "^0.185.0",
     "troika-three-text": "^0.52.4",
