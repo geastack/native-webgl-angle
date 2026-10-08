@@ -168,6 +168,23 @@ extern "C" bool gea_three_key_pressed(double code) {
   return gGeaKeyState[c];
 }
 
+#if defined(_WIN32)
+// The Win32 window procedure owns input on Windows; it reports into the same
+// tables the AppKit host view fills on macOS (keys as macOS virtual key codes).
+extern "C" void gea_three_set_key_state(int code, bool down) {
+  if (code >= 0 && code < 256) gGeaKeyState[code] = down;
+}
+
+extern "C" void gea_three_set_pointer_state(double x, double y, double width, double height, bool down) {
+  gGeaPointerX = x;
+  gGeaPointerY = y;
+  gGeaPointerW = width;
+  gGeaPointerH = height;
+  gGeaPointerDown = down;
+  gGeaPointerSeq += 1.0;
+}
+#endif
+
 #if !defined(_WIN32)
 @interface GeaAngleWebGLHostView : NSView
 @end
@@ -1064,8 +1081,22 @@ extern "C" bool gea_three_webgl_attach(
   if (gWebGL.ready) return true;
 
 #if defined(_WIN32)
-  gWebGL.egl = LoadPackagedLibrary(L"libEGL.dll", 0);
-  gWebGL.gles = LoadPackagedLibrary(L"libGLESv2.dll", 0);
+  // An override (e.g. threejs-rendozer's GeaRendozerGLES.dll) first, then the
+  // packaged ANGLE of a UWP app, then a plain desktop load next to the exe.
+  auto openWin32 = [](const wchar_t *overrideEnv, const wchar_t *name) -> HMODULE {
+    wchar_t overridePath[MAX_PATH];
+    const DWORD n = GetEnvironmentVariableW(overrideEnv, overridePath, MAX_PATH);
+    if (n > 0 && n < MAX_PATH) {
+      if (HMODULE m = LoadLibraryW(overridePath)) return m;
+    }
+#if defined(WINAPI_FAMILY) && WINAPI_FAMILY == WINAPI_FAMILY_APP
+    return LoadPackagedLibrary(name, 0);
+#else
+    return LoadLibraryW(name);
+#endif
+  };
+  gWebGL.egl = openWin32(L"GEA_ANGLE_EGL_DYLIB", L"libEGL.dll");
+  gWebGL.gles = openWin32(L"GEA_ANGLE_GLES_DYLIB", L"libGLESv2.dll");
 #else
   static const char *const eglPaths[] = {
     "/Applications/Visual Studio Code.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
@@ -1397,6 +1428,61 @@ extern "C" void gea_three_webgl_swap() {
         }
         std::fclose(file);
         smokeLog("[three-angle-metal] dumped frame %d to %s", dumpCount, path);
+      }
+    }
+  }
+  // Debug recording: GEA_WEBGL_RECORD=<path>[:<seconds>] appends the
+  // framebuffer as raw top-down RGB24 at a constant 30 fps of wall-clock time
+  // (frames repeat or drop to hold the rate), then closes the file. The size
+  // goes to the smoke log; encode with ffmpeg -f rawvideo -pix_fmt rgb24.
+  if (const char *recordSpec = std::getenv("GEA_WEBGL_RECORD"); recordSpec && gWebGL.glReadPixels) {
+    static FILE *recordFile = nullptr;
+    static bool recordDone = false;
+    static double recordSeconds = 30.0;
+    static long long recordWritten = 0;
+    static int recordW = 0, recordH = 0;
+    static std::chrono::steady_clock::time_point recordStart;
+    if (!recordDone && !recordFile) {
+      std::string spec(recordSpec);
+      // A trailing ":<seconds>" sets the length; drive-letter colons stay in the path.
+      if (const size_t colon = spec.rfind(':'); colon != std::string::npos && colon > 1) {
+        recordSeconds = std::atof(spec.c_str() + colon + 1);
+        spec.resize(colon);
+      }
+      recordW = gWebGL.widthPx;
+      recordH = gWebGL.heightPx;
+      recordFile = std::fopen(spec.c_str(), "wb");
+      recordStart = std::chrono::steady_clock::now();
+      if (recordFile) {
+        smokeLog("[record] %dx%d rgb24 30fps %.1fs -> %s", recordW, recordH, recordSeconds, spec.c_str());
+      } else {
+        recordDone = true;
+      }
+    }
+    if (recordFile) {
+      const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - recordStart).count();
+      const long long due = std::min(static_cast<long long>(elapsed * 30.0) + 1,
+                                     static_cast<long long>(recordSeconds * 30.0));
+      if (due > recordWritten && gWebGL.widthPx == recordW && gWebGL.heightPx == recordH) {
+        std::vector<unsigned char> rgba(static_cast<size_t>(recordW) * recordH * 4);
+        std::vector<unsigned char> rgb(static_cast<size_t>(recordW) * recordH * 3);
+        gWebGL.glReadPixels(0, 0, recordW, recordH, GL_RGBA_VALUE, GL_UNSIGNED_BYTE, rgba.data());
+        for (int y = 0; y < recordH; ++y) {
+          const unsigned char *src = rgba.data() + static_cast<size_t>(recordH - 1 - y) * recordW * 4;
+          unsigned char *dst = rgb.data() + static_cast<size_t>(y) * recordW * 3;
+          for (int x = 0; x < recordW; ++x) {
+            dst[x * 3 + 0] = src[x * 4 + 0];
+            dst[x * 3 + 1] = src[x * 4 + 1];
+            dst[x * 3 + 2] = src[x * 4 + 2];
+          }
+        }
+        for (; recordWritten < due; ++recordWritten) std::fwrite(rgb.data(), 1, rgb.size(), recordFile);
+      }
+      if (recordWritten >= static_cast<long long>(recordSeconds * 30.0)) {
+        std::fclose(recordFile);
+        recordFile = nullptr;
+        recordDone = true;
+        smokeLog("[record] done: %lld frames", recordWritten);
       }
     }
   }
