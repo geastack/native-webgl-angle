@@ -2010,7 +2010,8 @@ const transformSource = ({ fileName, text }) => {
   }
   if (normalized.endsWith("/three/src/renderers/WebGLRenderer.js")) {
     transformed =
-      `import { nativeProfilePhase } from '${fileURLToPath(new URL("./src/nativeWebGLHost.ts", import.meta.url))}';\n` +
+      // Forward slashes: a Windows path's backslashes would be escapes in this literal.
+      `import { nativeProfilePhase } from '${fileURLToPath(new URL("./src/nativeWebGLHost.ts", import.meta.url)).replaceAll("\\", "/")}';\n` +
       transformed;
     transformed = replaceOne(
       transformed,

@@ -147,11 +147,13 @@ export function transformAutomaticInstancing(text, fileName, replaceOne, renderI
 }
 
 export function transformCanonicalInstanceHooks(text, fileName) {
-  if (fileName.endsWith('/three/src/core/Object3D.js')) {
+  // Windows paths arrive with backslashes.
+  const normalized = fileName.replaceAll('\\', '/');
+  if (normalized.endsWith('/three/src/core/Object3D.js')) {
     return text + `\nexport const nativeInstanceBeforeRender = Object3D.prototype.onBeforeRender;
 export const nativeInstanceAfterRender = Object3D.prototype.onAfterRender;\n`;
   }
-  if (fileName.endsWith('/three/src/materials/Material.js')) {
+  if (normalized.endsWith('/three/src/materials/Material.js')) {
     return text + `\nexport const nativeInstanceMaterialBeforeRender = Material.prototype.onBeforeRender;
 export const nativeInstanceBeforeCompile = Material.prototype.onBeforeCompile;
 export const nativeInstanceProgramCacheKey = Material.prototype.customProgramCacheKey;\n`;
