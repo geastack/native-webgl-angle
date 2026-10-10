@@ -1,8 +1,12 @@
+#include "webgl_readback.h"
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+// Legacy Win16 macros are not C++ identifiers and must not leak into the runtime.
+#undef near
+#undef far
 #else
 #include "gea/apple/native_bridge.h"
 
@@ -439,7 +443,15 @@ using PFNGLVERTEXATTRIBDIVISORPROC = void (*)(GLuint, GLuint);
 using PFNGLVERTEXATTRIBPOINTERPROC = void (*)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
 using PFNGLVIEWPORTPROC = void (*)(GLint, GLint, GLsizei, GLsizei);
 
+using PFNGLCOPYTEXIMAGE2DPROC=void(*)(GLenum,GLint,GLenum,GLint,GLint,GLsizei,GLsizei,GLint);
+using PFNGLCOPYTEXSUBIMAGE2DPROC=void(*)(GLenum,GLint,GLint,GLint,GLint,GLint,GLsizei,GLsizei);
+using PFNGLBLITFRAMEBUFFERPROC = void (*)(GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLbitfield,GLenum);
+using PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC = void (*)(GLenum,GLsizei,GLenum,GLsizei,GLsizei);
 struct AngleWebGLState {
+  PFNGLCOPYTEXIMAGE2DPROC glCopyTexImage2D=nullptr;
+  PFNGLCOPYTEXSUBIMAGE2DPROC glCopyTexSubImage2D=nullptr;
+  PFNGLBLITFRAMEBUFFERPROC glBlitFramebuffer = nullptr;
+  PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC glRenderbufferStorageMultisample = nullptr;
   void *egl = nullptr;
   void *gles = nullptr;
   EGLDisplay display = EGL_NO_DISPLAY;
@@ -580,6 +592,7 @@ struct AngleWebGLState {
 };
 
 static AngleWebGLState gWebGL;
+static GLenum hostReadbackError = 0;
 static std::chrono::steady_clock::time_point gProfileSizeSync;
 static bool gProfileSizeSyncPending = false;
 static bool nativeFrameProfileEnabled() {
@@ -1016,6 +1029,10 @@ static bool loadGlSymbols() {
   LOAD_GL(glPixelStorei, PFNGLPIXELSTOREIPROC)
   LOAD_GL(glPolygonOffset, PFNGLPOLYGONOFFSETPROC)
   LOAD_GL(glReadPixels, PFNGLREADPIXELSPROC)
+  LOAD_GL(glCopyTexImage2D,PFNGLCOPYTEXIMAGE2DPROC)
+  LOAD_GL(glCopyTexSubImage2D,PFNGLCOPYTEXSUBIMAGE2DPROC)
+  LOAD_GL(glBlitFramebuffer, PFNGLBLITFRAMEBUFFERPROC)
+  LOAD_GL(glRenderbufferStorageMultisample, PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC)
   LOAD_GL(glRenderbufferStorage, PFNGLRENDERBUFFERSTORAGEPROC)
   LOAD_GL(glScissor, PFNGLSCISSORPROC)
   LOAD_GL(glShaderSource, PFNGLSHADERSOURCEPROC)
@@ -2259,7 +2276,7 @@ extern "C" void gea_three_webgl_draw_arrays_instanced(double mode, double first,
   geaTrapCheck("gea_three_webgl_draw_arrays_instanced"); GEA_WEBGL_VOID("drawArraysInstanced");
   gWebGL.glDrawArraysInstanced(asGLenum(mode), asGLint(first), asGLsizei(count), asGLsizei(instanceCount)); }
 extern "C" double gea_three_webgl_get_error() {
-  geaTrapCheck("gea_three_webgl_get_error"); GEA_WEBGL_DOUBLE("getError"); return gWebGL.glGetError(); }
+  geaTrapCheck("gea_three_webgl_get_error"); GEA_WEBGL_DOUBLE("getError"); if (hostReadbackError) { const GLenum e = hostReadbackError; hostReadbackError = 0; return e; } return gWebGL.glGetError(); }
 
 extern "C" double gea_three_webgl_call(
   double opValue,
@@ -2770,4 +2787,36 @@ extern "C" double gea_three_webgl_call_f32(
     return 0.0;
   }
   return 0.0;
+}
+
+extern "C" void gea_three_webgl_read_pixels_bytes(double x, double y, double width, double height,
+    double format, double type, void* bytes, double byteLength, double elementType) {
+  GEA_WEBGL_VOID("readPixels");
+  GLint alignment = 4, rowLength = 0, skipRows = 0, skipPixels = 0, packBuffer = 0;
+  gWebGL.glGetIntegerv(0x0D05, &alignment);
+  gWebGL.glGetIntegerv(0x0D02, &rowLength);
+  gWebGL.glGetIntegerv(0x0D03, &skipRows);
+  gWebGL.glGetIntegerv(0x0D04, &skipPixels);
+  gWebGL.glGetIntegerv(0x88ED, &packBuffer);
+  GLenum error = gea_webgl::validateReadPixels(width,height,format,type,byteLength,elementType,alignment,rowLength,skipRows,skipPixels);
+  if (packBuffer || (!bytes && width > 0 && height > 0)) error = 0x0502;
+  if (!std::isfinite(x) || !std::isfinite(y) || x < INT32_MIN || x > INT32_MAX || y < INT32_MIN || y > INT32_MAX) error = 0x0501;
+  if (error) { if (!hostReadbackError) hostReadbackError = error; return; }
+  gWebGL.glReadPixels(asGLint(x),asGLint(y),asGLsizei(width),asGLsizei(height),asGLenum(format),asGLenum(type),bytes);
+}
+
+extern "C" void gea_three_webgl_blit_framebuffer(double sx0,double sy0,double sx1,double sy1,double dx0,double dy0,double dx1,double dy1,double mask,double filter) {
+  GEA_WEBGL_VOID("blitFramebuffer");
+  gWebGL.glBlitFramebuffer(asGLint(sx0),asGLint(sy0),asGLint(sx1),asGLint(sy1),asGLint(dx0),asGLint(dy0),asGLint(dx1),asGLint(dy1),asGLenum(mask),asGLenum(filter));
+}
+extern "C" void gea_three_webgl_renderbuffer_storage_multisample(double target,double samples,double format,double width,double height) {
+  GEA_WEBGL_VOID("renderbufferStorageMultisample");
+  gWebGL.glRenderbufferStorageMultisample(asGLenum(target),asGLsizei(samples),asGLenum(format),asGLsizei(width),asGLsizei(height));
+}
+
+extern "C" void gea_three_webgl_copy_tex_image_2d(double target,double level,double format,double x,double y,double w,double h,double border){
+ GEA_WEBGL_VOID("copyTexImage2D");gWebGL.glCopyTexImage2D(asGLenum(target),asGLint(level),asGLenum(format),asGLint(x),asGLint(y),asGLsizei(w),asGLsizei(h),asGLint(border));
+}
+extern "C" void gea_three_webgl_copy_tex_sub_image_2d(double target,double level,double xo,double yo,double x,double y,double w,double h){
+ GEA_WEBGL_VOID("copyTexSubImage2D");gWebGL.glCopyTexSubImage2D(asGLenum(target),asGLint(level),asGLint(xo),asGLint(yo),asGLint(x),asGLint(y),asGLsizei(w),asGLsizei(h));
 }

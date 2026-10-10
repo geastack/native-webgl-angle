@@ -22,7 +22,7 @@ import { BufferGeometry } from 'three/src/core/BufferGeometry.js'
 import { MeshBasicMaterial } from 'three/src/materials/MeshBasicMaterial.js'
 import { Object3D } from 'three/src/core/Object3D.js'
 import type { Texture } from 'three/src/textures/Texture.js'
-import { atlasTexture, layoutText } from './text/native-text'
+import { atlasTexture, layoutText, layoutTextInPlace } from './text/native-text'
 import type { GlyphAtlas } from './text/native-text-types'
 import { sansAtlas } from './text/atlas-sans'
 import { serifAtlas } from './text/atlas-serif'
@@ -164,7 +164,13 @@ export class TroikaText extends Object3D {
       return
     }
     const atlas = atlasForFont(this.font)
+    const sameShape = this.inPlace(atlas, atlasKey)
     this.layoutKey = nextLayoutKey
+    if (sameShape) {
+      setMaterialHex(this.material, this.color)
+      this.material.opacity = this.fillOpacity
+      return
+    }
     const laidOut = layoutText(atlas, this.text, this.fontSize, this.letterSpacing)
     // Anchor offsets: troika's anchorX left|center|right and anchorY
     // top|middle|bottom (the subset the app uses). The layout origin is the
@@ -227,16 +233,53 @@ export class TroikaText extends Object3D {
     }
     // Keep both sides of the identity comparison on the shared Texture
     // carrier. Otherwise a derived DataTexture local can be incorrectly
-    // treated as disjoint from Material.map during native constant folding.
+    // treated as disjoint from Material.alphaMap during native constant folding.
+    this.laidAtlas = atlasKey
     const nextMap: Texture = atlasTexture(atlas)
-    if (this.material.map !== nextMap) {
-      this.material.map = nextMap
+    if (this.material.alphaMap !== nextMap) {
+      this.material.alphaMap = nextMap
       // needsUpdate recompiles the shader program; only pay that when the
       // map binding actually changed, not on every per-frame sync().
       this.material.needsUpdate = true
     }
     setMaterialHex(this.material, this.color)
     this.material.opacity = this.fillOpacity
+  }
+
+  // Only the text changed and lays out to as many quads as the current
+  // geometry holds (a counter changing digits): rewrite its positions and
+  // uvs in place. The index pattern of n quads does not depend on the glyphs.
+  private laidAtlas = ''
+  private inPlace(atlas: GlyphAtlas, atlasKey: string): boolean {
+    if (atlasKey !== this.laidAtlas) return false
+    const geometry: BufferGeometry = this.mesh.geometry
+    const position = geometry.getAttribute('position')
+    const uv = geometry.getAttribute('uv')
+    if (!(position instanceof BufferAttribute) || !(uv instanceof BufferAttribute)) return false
+    const positions = position.array
+    const uvs = uv.array
+    if (!(positions instanceof Float32Array) || !(uvs instanceof Float32Array) || positions.length === 0) return false
+    const width = layoutTextInPlace(atlas, this.text, this.fontSize, this.letterSpacing, positions, uvs)
+    if (width < 0) return false
+    const scale = this.fontSize / atlas.pixelHeight
+    const ascent = atlas.ascent * scale
+    const descent = atlas.descent * scale
+    let offsetX = 0
+    if (this.anchorX === 'center') offsetX = -width / 2
+    else if (this.anchorX === 'right') offsetX = -width
+    let offsetY = 0
+    if (this.anchorY === 'middle') offsetY = -(ascent + descent) / 2
+    else if (this.anchorY === 'top') offsetY = -ascent
+    else if (this.anchorY === 'bottom') offsetY = -descent
+    for (let i = 0; i < positions.length; i += 3) {
+      positions[i] += offsetX
+      positions[i + 1] += offsetY
+    }
+    position.needsUpdate = true
+    uv.needsUpdate = true
+    geometry.boundingSphere = null
+    geometry.boundingBox = null
+    return true
   }
 
   dispose(): void {
@@ -246,3 +289,5 @@ export class TroikaText extends Object3D {
 }
 
 export { TroikaText as Text }
+// A target that keeps atlas bitmaps outside its image (see native-text.ts).
+export { setAtlasAlphaSource, useSingleByteAtlases } from './text/native-text'
