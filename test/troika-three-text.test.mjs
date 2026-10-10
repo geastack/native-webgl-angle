@@ -75,8 +75,10 @@ assert.ok(mesh?.isMesh, 'Text should own a real Three Mesh')
 assert.equal(mesh.geometry.getAttribute('position').count, 8, 'two visible glyphs should produce two quads')
 assert.equal(mesh.geometry.getAttribute('uv').count, 8)
 assert.equal(mesh.geometry.index.count, 12)
-assert.ok(mesh.material.map?.isDataTexture, 'glyph atlas should be a real DataTexture')
-assert.ok(mesh.material.map.image.width > 0 && mesh.material.map.image.height > 0)
+assert.equal(mesh.material.map, null, 'glyph coverage must not multiply the text color')
+assert.ok(mesh.material.alphaMap?.isDataTexture, 'glyph coverage should use a real DataTexture alpha map')
+assert.ok(mesh.material.alphaMap.image.width > 0 && mesh.material.alphaMap.image.height > 0)
+assert.equal(mesh.material.color.getHex(), 0x68c3c0, 'atlas coverage should preserve the requested text color')
 assert.equal(mesh.material.opacity, 0.65)
 
 const unchangedGeometry = mesh.geometry
@@ -119,13 +121,13 @@ const italic = new Text()
 italic.font = 'gea-asset://sha256/test/playfair-italic.woff'
 italic.text = 'the'
 italic.sync()
-assert.notEqual(regular.children[0].material.map, italic.children[0].material.map, 'regular and italic fonts need distinct atlases')
+assert.notEqual(regular.children[0].material.alphaMap, italic.children[0].material.alphaMap, 'regular and italic fonts need distinct atlases')
 
 console.log(JSON.stringify({
   exportName: Text === TroikaText,
   glyphVertices: mesh.geometry.getAttribute('position').count,
   indexedTriangles: mesh.geometry.index.count / 3,
-  atlasWidth: mesh.material.map.image.width,
+  atlasWidth: mesh.material.alphaMap.image.width,
 }))
 `)
 

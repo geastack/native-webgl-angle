@@ -1,3 +1,5 @@
+declare function threeWebGLCopyTexImage2D(target:number,level:number,internalFormat:number,x:number,y:number,width:number,height:number,border:number):void;
+declare function threeWebGLCopyTexSubImage2D(target:number,level:number,xoffset:number,yoffset:number,x:number,y:number,width:number,height:number):void;
 /// <reference path="./gea-native-types.d.ts" />
 
 import {
@@ -198,6 +200,12 @@ function typedArrayKind(value: BufferSourceLike): number {
   return 1
 }
 
+declare function threeWebGLBlitFramebuffer(sx0:number, sy0:number, sx1:number, sy1:number, dx0:number, dy0:number, dx1:number, dy1:number, mask:number, filter:number): void
+declare function threeWebGLRenderbufferStorageMultisample(target:number, samples:number, format:number, width:number, height:number): void
+type ReadPixelsDestination = Uint8Array | Uint16Array | Float32Array | Uint32Array | Int32Array | Int16Array | Int8Array
+// Mutates the destination view; deliberately not marked host-inert.
+declare function threeWebGLReadPixels(x: number, y: number, width: number, height: number, format: number, type: number, destination: ReadPixelsDestination, offset: number): void
+
 function zeroF32Array(length: number): f32[] {
   const out: f32[] = []
   for (let index = 0; index < length; index++) out.push(0 as f32)
@@ -302,6 +310,9 @@ export interface NativeWebGLContextAttributes {
   powerPreference: string
   failIfMajorPerformanceCaveat: boolean
 }
+
+// Decoded image boundary. A native host never pretends DOM images have pixels.
+export interface NativeTextureImage { width: number; height: number; data: BufferSourceLike }
 
 export class NativeWebGLCanvas {
   width: number
@@ -1092,9 +1103,13 @@ export class NativeWebGL2RenderingContext {
   texParameterf(target: number, pname: number, param: number): void { nativeWebGLTexParameteri(target, pname, param) }
   pixelStorei(pname: number, param: number | boolean): void { nativeWebGLPixelStorei(pname, param === true ? 1 : param === false ? 0 : param) }
   generateMipmap(target: number): void { nativeWebGLGenerateMipmap(target) }
-  texImage2D(target: number, level: number, internalFormat: number, widthOrFormat: number, heightOrType: number, borderOrSource?: number | TexImageSource | null, format?: number, type?: number, pixels?: BufferSourceLike | TexImageSource | null): void {
+  texImage2D(target: number, level: number, internalFormat: number, widthOrFormat: number, heightOrType: number, borderOrSource?: number | NativeTextureImage | null, format?: number, type?: number, pixels?: BufferSourceLike | null): void {
     if (typeof borderOrSource === 'number' && typeof format === 'number' && typeof type === 'number') {
-      threeWebGLTexImage2D(target, level, internalFormat, widthOrFormat, heightOrType, format, type, pixels as BufferSourceLike)
+      threeWebGLTexImage2D(target, level, internalFormat, widthOrFormat, heightOrType, format, type, pixels ?? new Uint8Array(0))
+    } else if (borderOrSource && typeof borderOrSource !== 'number') {
+      threeWebGLTexImage2D(target, level, internalFormat, borderOrSource.width, borderOrSource.height, widthOrFormat, heightOrType, borderOrSource.data)
+    } else {
+      throw new Error('Native texImage2D requires dimensions and typed pixels, or a decoded NativeTextureImage')
     }
   }
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, type: number, pixels: BufferSourceLike): void {
@@ -1130,7 +1145,7 @@ export class NativeWebGL2RenderingContext {
   deleteRenderbuffer(renderbuffer: NativeHandle | null): void { nativeWebGLDeleteRenderbuffer(nullableNativeHandle(renderbuffer)) }
   renderbufferStorage(target: number, internalFormat: number, width: number, height: number): void { nativeWebGLRenderbufferStorage(target, internalFormat, width, height) }
   renderbufferStorageMultisample(target: number, samples: number, internalFormat: number, width: number, height: number): void {
-    this.renderbufferStorage(target, internalFormat, width, height)
+    threeWebGLRenderbufferStorageMultisample(target, samples, internalFormat, width, height)
   }
   framebufferRenderbuffer(target: number, attachment: number, renderbuffertarget: number, renderbuffer: NativeHandle | null): void {
     nativeWebGLFramebufferRenderbuffer(target, attachment, renderbuffertarget, nullableNativeHandle(renderbuffer))
@@ -1176,11 +1191,13 @@ export class NativeWebGL2RenderingContext {
   flush(): void {}
   hint(_target: number, _mode: number): void {}
   invalidateFramebuffer(_target: number, _attachments: BufferSourceLike): void {}
-  blitFramebuffer(_srcX0: number, _srcY0: number, _srcX1: number, _srcY1: number, _dstX0: number, _dstY0: number, _dstX1: number, _dstY1: number, _mask: number, _filter: number): void {}
+  blitFramebuffer(sx0:number, sy0:number, sx1:number, sy1:number, dx0:number, dy0:number, dx1:number, dy1:number, mask:number, filter:number): void { threeWebGLBlitFramebuffer(sx0,sy0,sx1,sy1,dx0,dy0,dx1,dy1,mask,filter) }
   readBuffer(_src: number): void {}
-  readPixels(_x: number, _y: number, _width: number, _height: number, _format: number, _type: number, _destination: unknown): void {}
-  copyTexImage2D(_target: number, _level: number, _internalFormat: number, _x: number, _y: number, _width: number, _height: number, _border: number): void {}
-  copyTexSubImage2D(_target: number, _level: number, _xoffset: number, _yoffset: number, _x: number, _y: number, _width: number, _height: number): void {}
+  readPixels(x: number, y: number, width: number, height: number, format: number, type: number, destination: ReadPixelsDestination, offset = 0): void {
+    threeWebGLReadPixels(x, y, width, height, format, type, destination, offset)
+  }
+  copyTexImage2D(target: number, level: number, internalFormat: number, x: number, y: number, width: number, height: number, border: number): void {threeWebGLCopyTexImage2D(target,level,internalFormat,x,y,width,height,border);}
+  copyTexSubImage2D(target: number, level: number, xoffset: number, yoffset: number, x: number, y: number, width: number, height: number): void {threeWebGLCopyTexSubImage2D(target,level,xoffset,yoffset,x,y,width,height);}
   copyTexSubImage3D(_target: number, _level: number, _xoffset: number, _yoffset: number, _zoffset: number, _x: number, _y: number, _width: number, _height: number): void {}
   clearBufferiv(_buffer: number, _drawbuffer: number, _values: BufferSourceLike): void {}
   clearBufferuiv(_buffer: number, _drawbuffer: number, _values: BufferSourceLike): void {}

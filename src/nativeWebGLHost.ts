@@ -148,9 +148,16 @@ export function nativeWebGLDrawElements(mode: number, count: number, type: numbe
 export function nativeWebGLDrawArrays(mode: number, first: number, count: number): void { threeWebGLDrawArrays(mode, first, count) }
 export function nativeWebGLGetError(): number { return threeWebGLGetError() }
 
-/** Lifecycle entry: retains/uses the host view and installs native monitors; not an inert call. */
+/**
+ * Lifecycle entry: retains/uses the host view and installs native monitors; not an inert call.
+ * It writes no property on any script object, which is the narrower contract.
+ * @gea-host-no-property-writes
+ */
 declare function threeWebGLAttach(view: NSView, width: number, height: number, devicePixelRatio: number): boolean
-/** Lifecycle entry: synchronizes host layout and viewport state; keep outside the inert contract. */
+/**
+ * Lifecycle entry: synchronizes host layout and viewport state; keep outside the inert contract.
+ * @gea-host-no-property-writes
+ */
 declare function threeWebGLSyncSize(fallbackAspect: number): number
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLWidth(): number

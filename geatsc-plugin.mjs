@@ -3,6 +3,7 @@ import {
   transformCanonicalInstanceHooks,
 } from "./geatsc-plugin-instancing.mjs";
 import fs from "node:fs";
+import { nativeReadbackFunctions } from "./geatsc-plugin-readback.mjs";
 import { nativeUploadFunctions } from "./geatsc-plugin-uploads.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -74,6 +75,8 @@ function nativeVoidMemberCallContract(
 }
 
 const hostFunctions = [
+ ['threeWebGLCopyTexImage2D','gea_three_webgl_copy_tex_image_2d','void','extern "C" void gea_three_webgl_copy_tex_image_2d(double,double,double,double,double,double,double,double);'],
+ ['threeWebGLCopyTexSubImage2D','gea_three_webgl_copy_tex_sub_image_2d','void','extern "C" void gea_three_webgl_copy_tex_sub_image_2d(double,double,double,double,double,double,double,double);'],
   [
     "threeWebGLVertexAttribDivisor",
     "gea_three_webgl_vertex_attrib_divisor",
@@ -93,6 +96,9 @@ const hostFunctions = [
     'extern "C" void gea_three_webgl_draw_arrays_instanced(double mode, double first, double count, double instanceCount);',
   ],
   ...nativeUploadFunctions,
+  ...nativeReadbackFunctions,
+  ['threeWebGLBlitFramebuffer','gea_three_webgl_blit_framebuffer','void','extern "C" void gea_three_webgl_blit_framebuffer(double,double,double,double,double,double,double,double,double,double);'],
+  ['threeWebGLRenderbufferStorageMultisample','gea_three_webgl_renderbuffer_storage_multisample','void','extern "C" void gea_three_webgl_renderbuffer_storage_multisample(double,double,double,double,double);'],
   [
     "threeNativeProfilePhase",
     "gea_three_native_profile_phase",
@@ -10468,7 +10474,7 @@ export default {
         embeddedHostNoThrowFunctions,
         hostNativeArrayFunctions: hostFunctions
           .filter(([, , , declaration]) =>
-            declaration.includes("HostNumericArgument<"),
+            declaration.includes("HostNumericArgument<") || declaration.includes("void* bytes"),
           )
           .map(([, cppName]) => cppName),
         hostArraySnapshotFunctions: hostFunctions

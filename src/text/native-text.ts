@@ -6,15 +6,18 @@
 import { BufferAttribute } from 'three/src/core/BufferAttribute.js'
 import { BufferGeometry } from 'three/src/core/BufferGeometry.js'
 import { DataTexture } from 'three/src/textures/DataTexture.js'
+import type { Texture } from 'three/src/textures/Texture.js'
 import {
   ClampToEdgeWrapping,
   LinearFilter,
   NoColorSpace,
-  RGBAFormat,
+  RedFormat,
+  RGFormat,
   UnsignedByteType,
   UVMapping,
 } from 'three/src/constants.js'
 import type { GlyphAtlas } from './native-text-types'
+import { base64Bytes, inflateRaw } from '../inflate'
 export interface LaidOutText {
   geometry: BufferGeometry
   positions: Float32Array
@@ -30,66 +33,73 @@ export interface LaidOutText {
 const textureCacheKeys: string[] = []
 const textureCacheValues: DataTexture[] = []
 
-function base64Value(code: number): number {
-  if (code >= 65 && code <= 90) return code - 65
-  if (code >= 97 && code <= 122) return code - 71
-  if (code >= 48 && code <= 57) return code + 4
-  if (code === 43) return 62
-  if (code === 47) return 63
-  return 0
+// Where an atlas's alpha bitmap comes from when the build carries none
+// (`alphaBase64` is empty): a target can keep its atlases outside the app image
+// -- the ESP-Mosaico on its SPI NAND -- and set this to read one by atlas name.
+// The bytes are the bitmap as baked: raw DEFLATE when `alphaPacked`.
+let atlasAlphaSource: (name: string) => Uint8Array = (name: string): Uint8Array => {
+  throw new Error(`text: no alpha bitmap for atlas ${name}: this build carries none and no source is set`)
 }
 
-// Decode the base64 alpha bitmap into an RGBA texture (white RGB, glyph
-// alpha). Built once per atlas and shared by every text instance.
+export function setAtlasAlphaSource(source: (name: string) => Uint8Array): void {
+  atlasAlphaSource = source
+}
+
+// A renderer that can sample one byte per texel as both red and green (gea-threejs:
+// TextureUserData.redAsGreen) keeps an atlas at one byte per texel instead of two,
+// and the bitmap read from the source is the texture's own storage (no copy).
+let singleByteAtlases = false
+
+export function useSingleByteAtlases(): void {
+  singleByteAtlases = true
+}
+
+// Decode the alpha bitmap into the glyph coverage texture, built once per atlas
+// and shared by every text instance. It is the material's alphaMap, which
+// reads green, so the texture is red-green (r = g = coverage): two bytes per
+// texel where a white RGBA map took four, and a renderer that keeps byte
+// images at their own size (gea-threejs) holds half of what it did. The
+// bytes are dropped once uploaded -- nothing re-uploads an atlas.
 export function atlasTexture(atlas: GlyphAtlas): DataTexture {
   for (let i = 0; i < textureCacheKeys.length; i++) {
     if (textureCacheKeys[i] === atlas.name) return textureCacheValues[i]
   }
   const total = atlas.atlasWidth * atlas.atlasHeight
-  const rgba = new Uint8Array(total * 4)
-  let out = 0
-  for (let c = 0; c < atlas.alphaBase64.length; c++) {
-    // Do not route through atob's "binary string". The native runtime stores
-    // strings as UTF-8, so bytes >= 0x80 would be interpreted as Unicode when
-    // charCodeAt reads the result, corrupting the alpha atlas. Decode the ASCII
-    // base64 directly into the typed array instead.
-    const chunk = atlas.alphaBase64[c]
-    for (let i = 0; i < chunk.length; i += 4) {
-      const code2 = chunk.charCodeAt(i + 2)
-      const code3 = chunk.charCodeAt(i + 3)
-      const v0 = base64Value(chunk.charCodeAt(i))
-      const v1 = base64Value(chunk.charCodeAt(i + 1))
-      const v2 = base64Value(code2)
-      const v3 = base64Value(code3)
-      const a0 = (v0 << 2) | (v1 >> 4)
-      rgba[out] = 255
-      rgba[out + 1] = 255
-      rgba[out + 2] = 255
-      rgba[out + 3] = a0
-      out += 4
-      if (code2 !== 61) {
-        const a1 = ((v1 & 15) << 4) | (v2 >> 2)
-        rgba[out] = 255
-        rgba[out + 1] = 255
-        rgba[out + 2] = 255
-        rgba[out + 3] = a1
-        out += 4
-      }
-      if (code3 !== 61) {
-        const a2 = ((v2 & 3) << 6) | v3
-        rgba[out] = 255
-        rgba[out + 1] = 255
-        rgba[out + 2] = 255
-        rgba[out + 3] = a2
-        out += 4
-      }
-    }
+  const encoded = atlas.alphaBase64.length === 0 ? atlasAlphaSource(atlas.name) : base64Bytes(atlas.alphaBase64)
+  const alpha = atlas.alphaPacked ? inflateRaw(encoded, total) : encoded
+  if (singleByteAtlases) {
+    const single = new DataTexture(
+      alpha,
+      atlas.atlasWidth,
+      atlas.atlasHeight,
+      RedFormat,
+      UnsignedByteType,
+      UVMapping,
+      ClampToEdgeWrapping,
+      ClampToEdgeWrapping,
+      LinearFilter,
+      LinearFilter,
+      1,
+      NoColorSpace,
+    )
+    single.userData.redAsGreen = true
+    single.unpackAlignment = 1
+    single.onUpdate = releaseAtlasBytes
+    single.needsUpdate = true
+    textureCacheKeys.push(atlas.name)
+    textureCacheValues.push(single)
+    return single
+  }
+  const coverage = new Uint8Array(total * 2)
+  for (let i = 0; i < total; i++) {
+    coverage[i * 2] = alpha[i]
+    coverage[i * 2 + 1] = alpha[i]
   }
   const tex = new DataTexture(
-    rgba,
+    coverage,
     atlas.atlasWidth,
     atlas.atlasHeight,
-    RGBAFormat,
+    RGFormat,
     UnsignedByteType,
     UVMapping,
     ClampToEdgeWrapping,
@@ -99,10 +109,20 @@ export function atlasTexture(atlas: GlyphAtlas): DataTexture {
     1,
     NoColorSpace,
   )
+  // Rows of width * 2 bytes: tightly packed for any even width.
+  tex.unpackAlignment = 2
+  tex.onUpdate = releaseAtlasBytes
   tex.needsUpdate = true
   textureCacheKeys.push(atlas.name)
   textureCacheValues.push(tex)
   return tex
+}
+
+
+function releaseAtlasBytes(texture: Texture): void {
+  if (!(texture instanceof DataTexture)) return
+  const image = texture.image
+  if (image !== null) image.data = new Uint8Array(0)
 }
 
 const kerningCacheKeys: string[] = []
@@ -119,6 +139,90 @@ function kerningTable(atlas: GlyphAtlas): Map<number, number> {
   kerningCacheKeys.push(atlas.name)
   kerningCacheValues.push(table)
   return table
+}
+
+// layoutText's quads written into existing position (12 per quad) and uv
+// (8 per quad) arrays, when `text` lays out to exactly as many quads as they
+// hold: a score or FPS readout changing digits reuses its geometry instead of
+// building a new one. Returns the laid-out width, or -1 (nothing written in a
+// way the caller may keep) when the quad count differs.
+export function layoutTextInPlace(
+  atlas: GlyphAtlas,
+  text: string,
+  fontSize: number,
+  letterSpacing: number,
+  positions: Float32Array,
+  uvs: Float32Array,
+): number {
+  const quads = positions.length / 12
+  if (uvs.length !== quads * 8) return -1
+  let n = 0
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    if (code === 10) return -1
+    const index = code - atlas.first
+    if (index < 0 || index >= atlas.glyphs.length) continue
+    const g = atlas.glyphs[index]
+    if (g[2] > g[0] && g[3] > g[1]) n++
+  }
+  if (n !== quads) return -1
+  const scale = fontSize / atlas.pixelHeight
+  const kern = kerningTable(atlas)
+  const invW = 1 / atlas.atlasWidth
+  const invH = 1 / atlas.atlasHeight
+  let penX = 0
+  let prev = 0
+  let q = 0
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    const index = code - atlas.first
+    if (index < 0 || index >= atlas.glyphs.length) continue
+    if (prev !== 0) {
+      const k = kern.get(prev * 1024 + code)
+      if (k !== undefined) penX += k * scale
+    }
+    const g = atlas.glyphs[index]
+    const gx0 = g[0]
+    const gy0 = g[1]
+    const gx1 = g[2]
+    const gy1 = g[3]
+    if (gx1 > gx0 && gy1 > gy0) {
+      const x0 = penX + g[4] * scale
+      const y1 = -g[5] * scale
+      const x1 = x0 + (gx1 - gx0) * scale
+      const y0 = y1 - (gy1 - gy0) * scale
+      const p = q * 12
+      positions[p] = x0
+      positions[p + 1] = y0
+      positions[p + 2] = 0
+      positions[p + 3] = x1
+      positions[p + 4] = y0
+      positions[p + 5] = 0
+      positions[p + 6] = x1
+      positions[p + 7] = y1
+      positions[p + 8] = 0
+      positions[p + 9] = x0
+      positions[p + 10] = y1
+      positions[p + 11] = 0
+      const u0 = gx0 * invW
+      const u1 = gx1 * invW
+      const v0 = gy1 * invH
+      const v1 = gy0 * invH
+      const t = q * 8
+      uvs[t] = u0
+      uvs[t + 1] = v0
+      uvs[t + 2] = u1
+      uvs[t + 3] = v0
+      uvs[t + 4] = u1
+      uvs[t + 5] = v1
+      uvs[t + 6] = u0
+      uvs[t + 7] = v1
+      q++
+    }
+    penX += g[6] * scale + letterSpacing * fontSize
+    prev = code
+  }
+  return penX > 0 ? penX : 0
 }
 
 // Build quad geometry for `text` at `fontSize` world units per em.
