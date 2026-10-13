@@ -44,7 +44,9 @@ export const nativeLightUniformClassNames = [
 export const nativeUniformTypedefs = `/**
  * Every value a shader uniform slot can hold, as ONE disjoint union: the math
  * classes three's setters duck-type (\`v.x\`, \`v.r\`, \`v.elements\`), textures,
- * the flat numeric arrays, and the light-uniform arrays \`WebGLLights\` builds.
+ * the flat numeric arrays, the vector and matrix arrays a custom
+ * \`ShaderMaterial\` declares (\`uniform vec4 u[ N ]\`, flattened by
+ * \`copyUniformElement\`), and the light-uniform arrays \`WebGLLights\` builds.
  * A slot is therefore one native tagged union, and every consumer narrows it
  * with \`instanceof\`/\`typeof\`/\`Array.isArray\` instead of reading a box.
  * @typedef {number|boolean|null|undefined
@@ -57,7 +59,9 @@ export const nativeUniformTypedefs = `/**
  *   |import('../../math/Matrix4.js').Matrix4
  *   |import('../../textures/Texture.js').Texture
  *   |number[]|Float32Array|Int32Array|Uint32Array
+ *   |Array<import('../../math/Vector2.js').Vector2>
  *   |Array<import('../../math/Vector3.js').Vector3>
+ *   |Array<import('../../math/Vector4.js').Vector4>
  *   |Array<import('../../math/Matrix4.js').Matrix4>
  *   |Array<import('../../textures/Texture.js').Texture|null>
 ${nativeLightUniformClassNames.map((name) => ` *   |${name}|${name}[]`).join('\n')}
@@ -345,10 +349,24 @@ export function isUniformNumberArray( value ) {
 
 }
 
+/** @param {NativeUniformValue} value @return {value is Vector2[]} */
+function isVector2Array( value ) {
+
+\treturn Array.isArray( value ) && value.length > 0 && value[ 0 ] instanceof Vector2;
+
+}
+
 /** @param {NativeUniformValue} value @return {value is Vector3[]} */
 function isVector3Array( value ) {
 
 \treturn Array.isArray( value ) && value.length > 0 && value[ 0 ] instanceof Vector3;
+
+}
+
+/** @param {NativeUniformValue} value @return {value is Vector4[]} */
+function isVector4Array( value ) {
+
+\treturn Array.isArray( value ) && value.length > 0 && value[ 0 ] instanceof Vector4;
 
 }
 
@@ -405,9 +423,31 @@ export function cloneUniformValue( value ) {
 
 \tif ( isUniformNumberArray( value ) ) return value.slice();
 
+\tif ( isVector2Array( value ) ) {
+
+\t\t/** @type {Vector2[]} */
+\t\tconst cloned = [];
+
+\t\tfor ( let i = 0, l = value.length; i < l; i ++ ) cloned.push( value[ i ].clone() );
+
+\t\treturn cloned;
+
+\t}
+
 \tif ( isVector3Array( value ) ) {
 
 \t\t/** @type {Vector3[]} */
+\t\tconst cloned = [];
+
+\t\tfor ( let i = 0, l = value.length; i < l; i ++ ) cloned.push( value[ i ].clone() );
+
+\t\treturn cloned;
+
+\t}
+
+\tif ( isVector4Array( value ) ) {
+
+\t\t/** @type {Vector4[]} */
 \t\tconst cloned = [];
 
 \t\tfor ( let i = 0, l = value.length; i < l; i ++ ) cloned.push( value[ i ].clone() );
