@@ -8575,17 +8575,6 @@ function WebGLProperties() {
 
 \t}
 
-\t/**
-\t * @param {WebGLPropertyOwner} object
-\t * @param {keyof NativeWebGLPropertyBag} key
-\t * @param {NativeWebGLPropertyBag[keyof NativeWebGLPropertyBag]} value
-\t */
-\tfunction update( object, key, value ) {
-
-\t\tget( object )[ key ] = value;
-
-\t}
-
 \tfunction dispose() {
 
 \t\tmaterials.clear();
@@ -8597,7 +8586,12 @@ function WebGLProperties() {
 
 \t}
 
-\treturn { has, get, remove, update, dispose };
+\t// Three's \`update( object, key, value )\` is left out: nothing in three
+\t// calls it, and its \`get( object )[ key ] = value\` stores a union of every
+\t// slot's type into the one slot \`key\` names. TypeScript rejects that store
+\t// (the target is \`never\`), and geatsc certifies no conversion from the
+\t// union into a single slot, so the C++ emitter refused the body.
+\treturn { has, get, remove, dispose };
 
 }
 
