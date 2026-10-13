@@ -1698,6 +1698,10 @@ const nativeDataTextureOverlayUnpackAlignmentSource =
   "\t/** @type {number} */\n\tunpackAlignment;";
 const overlayToJSONParameterSource =
   /(\/\*\*\n\t \* @param )\{[^\n]+\}( \[meta\]\n\t \*\/\n\ttoJSON\( meta \) \{)/g;
+const nativeObject3DJSONType =
+  "{ metadata?: { version: number, type: string, generator: string }, geometries?: Array<Object>, materials?: Array<Object>, textures?: Array<Object>, images?: Array<Object>, shapes?: Array<Object>, skeletons?: Array<Object>, animations?: Array<Object>, nodes?: Array<Object>, object: Object }";
+const nativeFogJSONType =
+  "{ type: string, name: string, color: number, near?: number, far?: number, density?: number }";
 const rendererReceiverMethods = [
   "setPixelRatio",
   "setSize",
@@ -2031,6 +2035,37 @@ const transformSource = ({ fileName, text }) => {
     transformed = transformed.replace(
       object3DRaycastSource,
       nativeObject3DRaycastSource,
+    );
+    // `JSON.stringify` on a declared-any value keeps every class's `toJSON`
+    // (three's own `copy()` deep-copies `userData` that way), so these bodies
+    // compile whenever a material or texture is cloned. `@return {Object}`
+    // states nothing, so every `super.toJSON( meta )`, `child.toJSON( meta )`
+    // and `camera.toJSON( false )` result boxed and then had to be read back
+    // as the record the body builds, which no conversion can do. The envelope
+    // is the record the body builds; `object` stays `Object` because each
+    // subclass adds its own fields to it (`data.object.fov = ...`).
+    transformed = replaceOne(
+      transformed,
+      "\t * @return {Object} A JSON object representing the serialized 3D object.",
+      `\t * @return {${nativeObject3DJSONType}} A JSON object representing the serialized 3D object.`,
+      fileName,
+      "Object3D.toJSON envelope",
+    );
+  }
+  if (
+    normalized.endsWith("/three/src/scenes/Fog.js") ||
+    normalized.endsWith("/three/src/scenes/FogExp2.js")
+  ) {
+    // `Scene.toJSON` calls `toJSON` on `?(Fog|FogExp2)`. Each body's own
+    // literal made the two methods two function types, and the read over the
+    // union had to convert one into the other. One record both literals fit,
+    // spelled once, makes them one type.
+    transformed = replaceOne(
+      transformed,
+      "\t * @return {Object} A JSON object representing the serialized fog",
+      `\t * @return {${nativeFogJSONType}} A JSON object representing the serialized fog`,
+      fileName,
+      "Fog toJSON shared record",
     );
   }
   if (normalized.endsWith("/three/src/renderers/WebGLRenderer.js")) {
@@ -3717,6 +3752,18 @@ class BufferGeometry extends EventDispatcher {`,
       "\t\t * @type {Record<string, Array<import('./BufferAttribute.js').BufferAttribute|import('./InterleavedBufferAttribute.js').InterleavedBufferAttribute>|undefined>}\n\t\t */\n\t\tthis.morphAttributes = {};",
       fileName,
       "BufferGeometry morph-attribute table",
+    );
+    // `toJSON` fills each morph entry from `const array = []`, which the
+    // checker types `any[]` (the table's entry type) while the census lays it
+    // out from its pushes, the union of the two attribute `toJSON` records.
+    // Two carriers for one array, and an array cannot be converted in place.
+    // State the element three's attribute `toJSON`s state: `Object`.
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tconst attributeArray = this.morphAttributes[ key ];\n\n\t\t\tconst array = [];",
+      "\t\t\tconst attributeArray = this.morphAttributes[ key ];\n\n\t\t\t/** @type {Array<Object>} */\n\t\t\tconst array = [];",
+      fileName,
+      "BufferGeometry.toJSON morph entry array",
     );
     transformed = replaceOne(
       transformed,
