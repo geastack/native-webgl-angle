@@ -1700,6 +1700,8 @@ const overlayToJSONParameterSource =
   /(\/\*\*\n\t \* @param )\{[^\n]+\}( \[meta\]\n\t \*\/\n\ttoJSON\( meta \) \{)/g;
 const nativeObject3DJSONType =
   "{ metadata?: { version: number, type: string, generator: string }, geometries?: Array<Object>, materials?: Array<Object>, textures?: Array<Object>, images?: Array<Object>, shapes?: Array<Object>, skeletons?: Array<Object>, animations?: Array<Object>, nodes?: Array<Object>, object: Object }";
+const nativeBufferGeometryJSONType =
+  "{ metadata: { version: number, type: string, generator: string }, uuid?: string, type?: string, name?: string, userData?: Object, data?: Object, instanceCount?: number, isInstancedBufferGeometry?: boolean, [key: string]: any }";
 const nativeFogJSONType =
   "{ type: string, name: string, color: number, near?: number, far?: number, density?: number }";
 const rendererReceiverMethods = [
@@ -3764,6 +3766,21 @@ class BufferGeometry extends EventDispatcher {`,
       "\t\t\tconst attributeArray = this.morphAttributes[ key ];\n\n\t\t\t/** @type {Array<Object>} */\n\t\t\tconst array = [];",
       fileName,
       "BufferGeometry.toJSON morph entry array",
+    );
+    // `JSON.stringify` on a declared-any value keeps every `toJSON` (see
+    // Object3D's envelope), so this envelope is published to dynamic code,
+    // which may write any of its fields. Laid out from the body, its `data`
+    // field is the record `data.data = { attributes: {} }` and the writes
+    // after it build, and a dynamic value has no reader into that record.
+    // State the envelope, with `data` left `Object` as Object3D's `object`
+    // is: the body fills it key by key. The index signature is the
+    // parameters branch, which copies each parameter in by name.
+    transformed = replaceOne(
+      transformed,
+      "\t * @return {Object} A JSON object representing the serialized geometry.\n\t */\n\ttoJSON() {\n\n\t\tconst data = {",
+      `\t * @return {${nativeBufferGeometryJSONType}} A JSON object representing the serialized geometry.\n\t */\n\ttoJSON() {\n\n\t\t/** @type {${nativeBufferGeometryJSONType}} */\n\t\tconst data = {`,
+      fileName,
+      "BufferGeometry.toJSON envelope",
     );
     transformed = replaceOne(
       transformed,
