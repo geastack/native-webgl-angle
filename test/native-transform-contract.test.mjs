@@ -114,6 +114,9 @@ for (const source of [eventDispatcherSource, nativeEventDispatcher]) {
 const webGLPropertiesPath = path.join(repoRoot, 'examples', 'node_modules', 'three', 'src', 'renderers', 'webgl', 'WebGLProperties.js')
 const nativeWebGLProperties = transformSource({ fileName: webGLPropertiesPath, text: fs.readFileSync(webGLPropertiesPath, 'utf8') })
 assert.match(nativeWebGLProperties, /\/\*\* @type \{boolean\|undefined\} \*\/\s*this\.needsLights = undefined;/)
+// `update( object, key, value )` stored a union of every slot's type into one
+// slot, which geatsc emits no conversion for; nothing in three calls it.
+assert.doesNotMatch(nativeWebGLProperties, /function update\(/)
 // `getParameters` stores `shaderIDs[ material.type ]` as `parameters.shaderID`,
 // and every `ShaderMaterial` misses that table, so the lookup must state the
 // `undefined` it yields there.
