@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { nativeUniformBindingHelpers, nativeUniformBindingNames, nativeWebGLUniformsSource } from '../geatsc-plugin-uniforms.mjs'
 
 const calls = []
-const start = nativeWebGLUniformsSource.indexOf('static upload( gl, seq, values, textures, clippingPlanes ) {')
+const start = nativeWebGLUniformsSource.indexOf('static upload( gl, seq, values, textures, clippingPlanes, slots ) {')
 const end = nativeWebGLUniformsSource.indexOf('\n\t/**', start)
 const upload = nativeWebGLUniformsSource.slice(start, end).replace('static upload', 'upload')
 const helpers = new Function('setNativeUniformValue', `${nativeUniformBindingHelpers}

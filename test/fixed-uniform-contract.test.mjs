@@ -13,31 +13,32 @@ for (const [name, type, usesTextures] of nativeFixedUniforms) {
   assert.ok(end > start)
   const method = nativeWebGLUniformsSource.slice(start, end + 4)
   const holder = new Function('SingleUniform', 'setNativeMatrix3UniformValue', 'setNativeMatrix4UniformValue', 'setNativeUniformValue',
-    `return { map: {}, ${method} }`)(SingleUniform, upload, upload, upload)
+    `return { ${method} }`)(SingleUniform, upload, upload, upload)
   const textures = usesTextures ? {} : undefined
   const set = value => holder[`set_${name}`](context, value, textures)
   const before = calls.length
   set(value)
   assert.equal(calls.length, before, `${name}: absent uniforms are skipped`)
+  // The setter reads the uniform resolved when the program's uniforms were parsed.
   const original = new SingleUniform()
-  holder.map[name] = original
+  holder[`fixed_${name}`] = original
   set(value)
   assert.deepEqual(calls.at(-1), { uniform: original, gl: context, value, textures })
   const replacement = new SingleUniform()
-  holder.map[name] = replacement
+  holder[`fixed_${name}`] = replacement
   set(value)
   assert.equal(calls.at(-1).uniform, replacement, `${name}: replacement must not use a stale cached uniform`)
-  delete holder.map[name]
+  delete holder[`fixed_${name}`]
   const after = calls.length
   set(value)
   assert.equal(calls.length, after)
   if (type === 'Matrix3' || type === 'Matrix4') {
-    holder.map[name] = {}
+    holder[`fixed_${name}`] = {}
     assert.throws(() => set(value), /requires a single uniform/)
   }
 }
 
-const start = nativeWebGLUniformsSource.indexOf('static upload( gl, seq, values, textures, clippingPlanes ) {')
+const start = nativeWebGLUniformsSource.indexOf('static upload( gl, seq, values, textures, clippingPlanes, slots ) {')
 const end = nativeWebGLUniformsSource.indexOf('\n\t/**', start)
 const source = nativeWebGLUniformsSource.slice(start, end).replace('static upload', 'upload')
 const { upload: uploadSequence } = new Function('setNativeUniformValue', `${nativeUniformBindingHelpers}; return { ${source} }`)(upload)
