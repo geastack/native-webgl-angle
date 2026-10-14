@@ -3199,6 +3199,27 @@ class WebGLRenderer {
       fileName,
       "WebGLRenderer native framebuffer selection",
     );
+    // The typed property bag keeps cube and mipmap framebuffers in their own arrays, so `__webglFramebuffer`
+    // stays undefined for those targets. three asks exactly that to decide whether a target is set up yet, so
+    // every setRenderTarget of a cube target ran setupRenderTarget again: six new framebuffers (and six face
+    // allocations) per call, never deleted (probe faces and each sky-cube step at a lighting change).
+    const setUpTarget = (name) =>
+      `${name}.__webglFramebuffer === undefined && ${name}.__webglMipmapFramebuffers.length === 0 && ` +
+      `${name}.__webglCubeFramebuffers.length === 0 && ${name}.__webglCubeMipmapFramebuffers.length === 0`;
+    transformed = replaceOne(
+      transformed,
+      "\t\t\t\t} else if ( renderTargetProperties.__webglFramebuffer === undefined ) {\n\n\t\t\t\t\ttextures.setupRenderTarget( renderTarget );",
+      `\t\t\t\t} else if ( ${setUpTarget("renderTargetProperties")} ) {\n\n\t\t\t\t\ttextures.setupRenderTarget( renderTarget );`,
+      fileName,
+      "WebGLRenderer render target set up once",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tif ( properties.get( target ).__webglFramebuffer === undefined ) {\n\n\t\t\t\ttextures.setupRenderTarget( target );",
+      `\t\t\tconst targetProperties = properties.get( target );\n\n\t\t\tif ( ${setUpTarget("targetProperties")} ) {\n\n\t\t\t\ttextures.setupRenderTarget( target );`,
+      fileName,
+      "WebGLRenderer initRenderTarget set up once",
+    );
     transformed = replaceOne(
       transformed,
       "\t\tthis.readRenderTargetPixels = function ( renderTarget, x, y, width, height, buffer, activeCubeFaceIndex, textureIndex = 0 ) {",
@@ -9640,9 +9661,31 @@ function WebGLRenderState( extensions ) {`,
 
 \t\t\trenderTarget.depthTexture.image.width = renderTarget.width;
 \t\t\trenderTarget.depthTexture.image.height = renderTarget.height;`,
-      `\t\tconst textureProperties = properties.get( renderTarget.depthTexture );
+      `\t\t// A render target disposed before it was set up again has no onRenderTargetDispose listener, so a
+\t\t// second dispose (RenderTarget.setSize) leaves its depth texture alone; and a material that samples
+\t\t// that depth texture meanwhile re-uploads it at its old image size (setSize does not resize
+\t\t// depthTexture.image). The size check below then only marks it needsUpdate, which never re-specifies
+\t\t// immutable texStorage2D storage: the target was set up with a depth attachment of the old size (a
+\t\t// multisample resolve past it removes the D3D12 device; WebGL reports FRAMEBUFFER_INCOMPLETE_DIMENSIONS).
+\t\t// Release that storage here so the upload below allocates it at the target's size.
+\t\tif ( ! isCube && properties.has( renderTarget.depthTexture ) ) {
+
+\t\t\tconst allocated = properties.get( renderTarget.depthTexture );
+\t\t\tconst allocatedImage = requireTextureImageRecord( renderTarget.depthTexture.image );
+
+\t\t\tif ( allocated.__webglTexture !== undefined && allocated.__webglTexture !== null &&
+\t\t\t\t( allocatedImage.width !== renderTarget.width || allocatedImage.height !== renderTarget.height ) ) {
+
+\t\t\t\tdeallocateTexture( renderTarget.depthTexture );
+
+\t\t\t}
+
+\t\t}
+
+\t\tconst textureProperties = properties.get( renderTarget.depthTexture );
 \t\ttextureProperties.__renderTarget = renderTarget;
-\t\tconst depthTextureImage = requireTextureImageRecord( renderTarget.depthTexture.image );
+\t\t// A CubeDepthTexture's image is its six face records (one shared object); size it through face 0.
+\t\tconst depthTextureImage = isCube ? requireTextureImageRecords( renderTarget.depthTexture.image )[ 0 ] : requireTextureImageRecord( renderTarget.depthTexture.image );
 
 \t\t// upload an empty depth texture with framebuffer size
 \t\tif ( ! textureProperties.__webglTexture ||
