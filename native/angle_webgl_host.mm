@@ -1,4 +1,6 @@
 #include "webgl_readback.h"
+// GEA_WEBGL_STATIC_GLES: EGL/GLES are statically linked into the program, so
+// nothing is loaded and entry points resolve through eglGetProcAddress.
 #if defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -7,13 +9,14 @@
 // Legacy Win16 macros are not C++ identifiers and must not leak into the runtime.
 #undef near
 #undef far
-#else
+#elif defined(__APPLE__)
 #include "gea/apple/native_bridge.h"
 
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <dispatch/dispatch.h>
-
+#endif
+#if !defined(_WIN32) && !defined(GEA_WEBGL_STATIC_GLES)
 #include <dlfcn.h>
 #endif
 // Typed uniform arguments use the compiler runtime on both native platforms.
@@ -172,7 +175,7 @@ extern "C" bool gea_three_key_pressed(double code) {
   return gGeaKeyState[c];
 }
 
-#if defined(_WIN32)
+#if !defined(__APPLE__)
 // The Win32 window procedure owns input on Windows; it reports into the same
 // tables the AppKit host view fills on macOS (keys as macOS virtual key codes).
 extern "C" void gea_three_set_key_state(int code, bool down) {
@@ -189,7 +192,7 @@ extern "C" void gea_three_set_pointer_state(double x, double y, double width, do
 }
 #endif
 
-#if !defined(_WIN32)
+#if defined(__APPLE__)
 @interface GeaAngleWebGLHostView : NSView
 @end
 
@@ -602,7 +605,7 @@ struct AngleWebGLState {
   PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
   PFNGLVIEWPORTPROC glViewport = nullptr;
 
-#if defined(_WIN32)
+#if !defined(__APPLE__)
   void *nativeWindow = nullptr;
 #else
   NSView *hostView = nil;
@@ -654,8 +657,13 @@ static void smokeLog(const char *format, ...) {
     std::fprintf(stderr, "%s\n", message);
     return;
   }
-#else
+#elif defined(__APPLE__)
   if (!path || path[0] == '\0') path = "/tmp/three-angle-metal-smoke.log";
+#else
+  if (!path || path[0] == '\0') {
+    std::fprintf(stderr, "%s\n", message);
+    return;
+  }
 #endif
   if (FILE *file = std::fopen(path, "a")) {
     std::fprintf(file, "%s\n", message);
@@ -676,7 +684,7 @@ extern "C" void gea_three_angle_smoke_log(std::string message) {
 // handler records the position in the host view's coordinate space with the
 // same top-left-origin flip the per-view path used. Returning the event
 // unmodified keeps normal dispatch (clicks, first responder) intact.
-#if !defined(_WIN32)
+#if defined(__APPLE__)
 static id gGeaPointerMonitor = nil;
 static void geaInstallPointerMonitor(void) {
   if (gGeaPointerMonitor) return;
@@ -719,9 +727,16 @@ static void *openFirst(const char *envName, const char *const *paths) {
 
 #endif
 
+#if defined(GEA_WEBGL_STATIC_GLES)
+extern "C" void *eglGetProcAddress(const char *name);
+#endif
 template <typename Fn>
 static Fn loadSymbol(void *library, const char *name) {
-#if defined(_WIN32)
+#if defined(GEA_WEBGL_STATIC_GLES)
+  (void)library;
+  if (std::strcmp(name, "eglGetProcAddress") == 0) return reinterpret_cast<Fn>(&eglGetProcAddress);
+  return reinterpret_cast<Fn>(eglGetProcAddress(name));
+#elif defined(_WIN32)
   return reinterpret_cast<Fn>(GetProcAddress(static_cast<HMODULE>(library), name));
 #else
   return reinterpret_cast<Fn>(dlsym(library, name));
@@ -820,7 +835,7 @@ static void logEglFailure(const char *step) {
   std::fprintf(stderr, "[three-angle-metal] %s failed, EGL error 0x%04x\n", step, lastEglError());
 }
 
-#if !defined(_WIN32)
+#if defined(__APPLE__)
 static CGFloat backingScaleForHostView(NSView *nativeView) {
   CGFloat scale = nativeView.window ? nativeView.window.backingScaleFactor : 0.0;
   if (scale <= 0.0 && nativeView.window.screen) scale = nativeView.window.screen.backingScaleFactor;
@@ -893,13 +908,13 @@ extern "C" void gea_three_webgl_update_size_uwp(double width, double height, dou
 }
 #endif
 
-#if defined(_WIN32)
+#if !defined(__APPLE__)
 // The UWP frame driver owns its EGL context exclusively until it returns to
 // CoreWindow event dispatch. Other hosts retain per-call binding semantics.
 static thread_local bool gUwpFrameContextCurrent = false;
 #endif
 static bool makeCurrent(const char *label) {
-#if defined(_WIN32)
+#if !defined(__APPLE__)
   if (gUwpFrameContextCurrent) return true;
 #endif
   if (!gWebGL.ready && gWebGL.context == EGL_NO_CONTEXT) return false;
@@ -930,7 +945,7 @@ static bool makeCurrent(const char *label) {
   return true;
 }
 
-#if defined(_WIN32)
+#if !defined(__APPLE__)
 extern "C" bool gea_three_webgl_begin_frame_uwp() {
   // Always rebind after the dispatcher, where arbitrary platform callbacks
   // may have used a different context. No such callbacks run within the frame.
@@ -944,7 +959,7 @@ extern "C" void gea_three_webgl_end_frame_uwp() {
 }
 #endif
 
-#if !defined(_WIN32)
+#if defined(__APPLE__)
 static bool rebuildWindowSurface(const char *label) {
   if (!gWebGL.eglCreateWindowSurface || !gWebGL.eglDestroySurface || !gWebGL.eglMakeCurrent ||
       !gWebGL.metalLayer || !gWebGL.config || gWebGL.context == EGL_NO_CONTEXT) {
@@ -1114,7 +1129,7 @@ static bool loadGlSymbols() {
   return true;
 }
 
-#if defined(_WIN32)
+#if !defined(__APPLE__)
 extern "C" bool gea_three_webgl_attach_uwp(
   void *nativeWindow,
 #else
@@ -1129,7 +1144,13 @@ extern "C" bool gea_three_webgl_attach(
   smokeLog("[three-angle-metal] WebGL host attach requested");
   if (gWebGL.ready) return true;
 
-#if defined(_WIN32)
+#if defined(GEA_WEBGL_STATIC_GLES)
+  // Linked into the program: nothing to load; loadSymbol resolves through
+  // eglGetProcAddress. The handles only need to be non-null.
+  static int staticGles;
+  gWebGL.egl = &staticGles;
+  gWebGL.gles = &staticGles;
+#elif defined(_WIN32)
   // An override (e.g. threejs-rendozer's GeaRendozerGLES.dll) first, then the
   // packaged ANGLE of a UWP app, then a plain desktop load next to the exe.
   auto openWin32 = [](const wchar_t *overrideEnv, const wchar_t *name) -> HMODULE {
@@ -1146,7 +1167,7 @@ extern "C" bool gea_three_webgl_attach(
   };
   gWebGL.egl = openWin32(L"GEA_ANGLE_EGL_DYLIB", L"libEGL.dll");
   gWebGL.gles = openWin32(L"GEA_ANGLE_GLES_DYLIB", L"libGLESv2.dll");
-#else
+#elif defined(__APPLE__)
   static const char *const eglPaths[] = {
     "/Applications/Visual Studio Code.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
     "/Applications/Cursor.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
@@ -1164,6 +1185,8 @@ extern "C" bool gea_three_webgl_attach(
 
   gWebGL.egl = openFirst("GEA_ANGLE_EGL_DYLIB", eglPaths);
   gWebGL.gles = openFirst("GEA_ANGLE_GLES_DYLIB", glesPaths);
+#else
+#error "load libEGL/libGLESv2 for this platform, or build with GEA_WEBGL_STATIC_GLES"
 #endif
   if (!gWebGL.egl || !gWebGL.gles) {
     smokeLog("[three-angle-metal] ANGLE libEGL/libGLESv2 were not found");
@@ -1241,7 +1264,7 @@ extern "C" bool gea_three_webgl_attach(
   }
   gWebGL.config = config;
 
-#if defined(_WIN32)
+#if !defined(__APPLE__)
   gWebGL.nativeWindow = nativeWindow;
   gea_three_webgl_update_size_uwp(width, height, devicePixelRatio);
   if (gWebGL.eglCreateWindowSurface) {
@@ -1307,7 +1330,7 @@ extern "C" bool gea_three_webgl_attach(
 
   gWebGL.ready = true;
   gWebGL.glViewport(0, 0, gWebGL.widthPx, gWebGL.heightPx);
-#if !defined(_WIN32)
+#if defined(__APPLE__)
   dispatch_async(dispatch_get_main_queue(), ^{
     if (gWebGL.ready && rebuildWindowSurface("eglCreateWindowSurface(deferred)")) {
       smokeLog("[three-angle-metal] WebGL EGL surface rebound at %dx%d", gWebGL.widthPx, gWebGL.heightPx);
@@ -1423,7 +1446,7 @@ extern "C" void gea_three_webgl_swap() {
   // TEMP-DIAG: GEA_THREE_VIEW_DUMP=1 — at frame 60, log the window's full
   // subview tree and a hit-test grid so overlay views that would swallow
   // mouse events are visible without Accessibility permission.
-#if !defined(_WIN32)
+#if defined(__APPLE__)
   if (std::getenv("GEA_THREE_VIEW_DUMP")) {
     static int viewDumpCount = 0;
     if (++viewDumpCount == 60) {
