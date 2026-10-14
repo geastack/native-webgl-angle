@@ -654,11 +654,15 @@ function ${name}( gl, v, textures ) {
 
 \tif ( v instanceof ${ctorName} ) {
 
-\t\tif ( ${fields.map((field, index) => `cache[ ${index} ] !== v.${field}`).join(' || ')} ) {
+\t\t// One narrowing and one read per component: each \`v.x\` re-narrowed the union value.
+\t\tconst vector = v;
+${fields.map((field) => `\t\tconst ${field} = vector.${field};`).join('\n')}
 
-\t\t\tgl.${glScalar}( this.addr, ${fields.map((field) => `v.${field}`).join(', ')} );
+\t\tif ( ${fields.map((field, index) => `cache[ ${index} ] !== ${field}`).join(' || ')} ) {
 
-${fields.map((field, index) => `\t\t\tcache[ ${index} ] = v.${field};`).join('\n')}
+\t\t\tgl.${glScalar}( this.addr, ${fields.join(', ')} );
+
+${fields.map((field, index) => `\t\t\tcache[ ${index} ] = ${field};`).join('\n')}
 
 \t\t}
 
@@ -761,19 +765,33 @@ ${
 }
 }`
 
+// Arrays compare against the program's cached copy like single values do: uniform state is
+// per program, and an unchanged write still dirtied the program's whole uniform block.
 const flatArraySetter = (name, glArray, requireArray) => `${setterHeader('PureArrayUniform')}
 function ${name}( gl, v, textures ) {
 
-\tgl.${glArray}( this.addr, ${requireArray}( v ) );
+\tconst cache = this.cache;
+\tconst data = ${requireArray}( v );
+
+\tif ( arraysEqual( cache, data ) ) return;
+
+\tgl.${glArray}( this.addr, data );
+
+\tcopyArray( cache, data );
 
 }`
 
 const flattenedArraySetter = (name, blockSize, glArray, matrix) => `${setterHeader('PureArrayUniform')}
 function ${name}( gl, v, textures ) {
 
+\tconst cache = this.cache;
 \tconst data = flatten( v, this.size, ${blockSize} );
 
+\tif ( arraysEqual( cache, data ) ) return;
+
 \tgl.${glArray}( this.addr, ${matrix ? 'false, ' : ''}data );
+
+\tcopyArray( cache, data );
 
 }`
 
@@ -906,6 +924,8 @@ export const nativeFixedUniforms = [
   ['modelMatrix', 'Matrix4'],
   ['toneMappingExposure', 'number'],
   ['cameraPosition', 'Vector3'],
+  ['receiveShadow', 'boolean'],
+  ['isOrthographic', 'boolean'],
   ...(nativeUniformBindingsEnabled ? [
     ['directionalShadowMap', 'Array<Texture|null>', true],
     ['spotShadowMap', 'Array<Texture|null>', true],
@@ -917,13 +937,17 @@ const fixedUniformMethods = nativeFixedUniforms.map(([name, type, textures]) => 
   return `
   /** @param {${glContext}} gl @param {${type}} value ${textures ? '@param {NativeTextures|undefined} textures' : ''} */
   set_${name}( gl, value${textures ? ', textures' : ''} ) {
-    const uniform = this.map.${name};
+    const uniform = this.fixed_${name};
     if ( uniform === undefined ) return;
     ${matrix ? `if ( ! ( uniform instanceof SingleUniform ) ) throw new Error( 'THREE.WebGLUniforms: ${type} fast path requires a single uniform.' );
     setNative${type}UniformValue( uniform, gl, value );` : `setNativeUniformValue( uniform, gl, value, ${textures ? 'textures' : 'undefined'} );`}
   }
 `
 }).join('\n')
+// The fixed uniforms are resolved once when the program's uniforms are parsed; each
+// per-draw setter then reads a field instead of hashing its name into `map` twice.
+const fixedUniformFields = nativeFixedUniforms.map(([name]) =>
+  `\t\t/** @type {NativeUniform|undefined} */\n\t\tthis.fixed_${name} = this.map.${name};\n`).join('')
 
 
 // Uniform nodes belong to the linked program: id/type/location remain fixed
@@ -1273,25 +1297,31 @@ function setValueV3f( gl, v, textures ) {
 
 \tif ( v instanceof Vector3 ) {
 
-\t\tif ( cache[ 0 ] !== v.x || cache[ 1 ] !== v.y || cache[ 2 ] !== v.z ) {
+\t\tconst vector = v;
+\t\tconst x = vector.x, y = vector.y, z = vector.z;
 
-\t\t\tgl.uniform3f( this.addr, v.x, v.y, v.z );
+\t\tif ( cache[ 0 ] !== x || cache[ 1 ] !== y || cache[ 2 ] !== z ) {
 
-\t\t\tcache[ 0 ] = v.x;
-\t\t\tcache[ 1 ] = v.y;
-\t\t\tcache[ 2 ] = v.z;
+\t\t\tgl.uniform3f( this.addr, x, y, z );
+
+\t\t\tcache[ 0 ] = x;
+\t\t\tcache[ 1 ] = y;
+\t\t\tcache[ 2 ] = z;
 
 \t\t}
 
 \t} else if ( v instanceof Color ) {
 
-\t\tif ( cache[ 0 ] !== v.r || cache[ 1 ] !== v.g || cache[ 2 ] !== v.b ) {
+\t\tconst color = v;
+\t\tconst r = color.r, g = color.g, b = color.b;
 
-\t\t\tgl.uniform3f( this.addr, v.r, v.g, v.b );
+\t\tif ( cache[ 0 ] !== r || cache[ 1 ] !== g || cache[ 2 ] !== b ) {
 
-\t\t\tcache[ 0 ] = v.r;
-\t\t\tcache[ 1 ] = v.g;
-\t\t\tcache[ 2 ] = v.b;
+\t\t\tgl.uniform3f( this.addr, r, g, b );
+
+\t\t\tcache[ 0 ] = r;
+\t\t\tcache[ 1 ] = g;
+\t\t\tcache[ 2 ] = b;
 
 \t\t}
 
@@ -1485,68 +1515,114 @@ ${nativeUniformBindingsEnabled ? '\t\tthis.nativeBindingSlot = nativeUniformBind
 }
 
 /**
- * The member a structured uniform's step reads: three writes \`value[ u.id ]\`,
- * where the value is an array (id is the index) or a light-uniform record
- * (id is the field name). The light records are classes, so the read is a
- * narrowed field read; an array indexes whichever arm it is.
- * @param {NativeUniformValue} value @param {string} id @return {NativeUniformValue}
+ * Member codes for a structured uniform's steps, resolved once when the program's
+ * uniforms are parsed: an array step's code is its index; a light-record field's
+ * code is a negative constant, so the per-draw read switches on a number instead
+ * of comparing field names and parsing index strings.
+ * @param {string} id @return {number}
  */
-function structuredUniformMember( value, id ) {
+function structuredUniformMemberCode( id ) {
 
-\tif ( Array.isArray( value ) ) return value[ Number( id ) ];
+\tif ( id === 'direction' ) return -1;
+\tif ( id === 'color' ) return -2;
+\tif ( id === 'position' ) return -3;
+\tif ( id === 'distance' ) return -4;
+\tif ( id === 'coneCos' ) return -5;
+\tif ( id === 'penumbraCos' ) return -6;
+\tif ( id === 'decay' ) return -7;
+\tif ( id === 'skyColor' ) return -8;
+\tif ( id === 'groundColor' ) return -9;
+\tif ( id === 'halfWidth' ) return -10;
+\tif ( id === 'halfHeight' ) return -11;
+\tif ( id === 'shadowIntensity' ) return -12;
+\tif ( id === 'shadowBias' ) return -13;
+\tif ( id === 'shadowNormalBias' ) return -14;
+\tif ( id === 'shadowRadius' ) return -15;
+\tif ( id === 'shadowMapSize' ) return -16;
+\tif ( id === 'shadowCameraNear' ) return -17;
+\tif ( id === 'shadowCameraFar' ) return -18;
+\tconst index = Number( id );
+\treturn Number.isInteger( index ) && index >= 0 ? index : - 1000;
+
+}
+
+/**
+ * The member a structured uniform's step reads: three writes \`value[ u.id ]\`,
+ * where the value is an array (member is the index) or a light-uniform record
+ * (member is the field's code). The light records are classes, so the read is a
+ * narrowed field read; an array indexes whichever arm it is.
+ * @param {NativeUniformValue} value @param {number} member @param {string} id @return {NativeUniformValue}
+ */
+function structuredUniformMember( value, member, id ) {
+
+\tif ( Array.isArray( value ) ) return value[ member ];
 
 \tif ( value instanceof NativeDirectionalLightUniform ) {
 
-\t\tif ( id === 'direction' ) return value.direction;
-\t\tif ( id === 'color' ) return value.color;
+\t\tswitch ( member ) {
+\t\t\tcase -1: return value.direction;
+\t\t\tcase -2: return value.color;
+\t\t}
 
 \t} else if ( value instanceof NativeSpotLightUniform ) {
 
-\t\tif ( id === 'position' ) return value.position;
-\t\tif ( id === 'direction' ) return value.direction;
-\t\tif ( id === 'color' ) return value.color;
-\t\tif ( id === 'distance' ) return value.distance;
-\t\tif ( id === 'coneCos' ) return value.coneCos;
-\t\tif ( id === 'penumbraCos' ) return value.penumbraCos;
-\t\tif ( id === 'decay' ) return value.decay;
+\t\tswitch ( member ) {
+\t\t\tcase -3: return value.position;
+\t\t\tcase -1: return value.direction;
+\t\t\tcase -2: return value.color;
+\t\t\tcase -4: return value.distance;
+\t\t\tcase -5: return value.coneCos;
+\t\t\tcase -6: return value.penumbraCos;
+\t\t\tcase -7: return value.decay;
+\t\t}
 
 \t} else if ( value instanceof NativePointLightUniform ) {
 
-\t\tif ( id === 'position' ) return value.position;
-\t\tif ( id === 'color' ) return value.color;
-\t\tif ( id === 'distance' ) return value.distance;
-\t\tif ( id === 'decay' ) return value.decay;
+\t\tswitch ( member ) {
+\t\t\tcase -3: return value.position;
+\t\t\tcase -2: return value.color;
+\t\t\tcase -4: return value.distance;
+\t\t\tcase -7: return value.decay;
+\t\t}
 
 \t} else if ( value instanceof NativeHemisphereLightUniform ) {
 
-\t\tif ( id === 'direction' ) return value.direction;
-\t\tif ( id === 'skyColor' ) return value.skyColor;
-\t\tif ( id === 'groundColor' ) return value.groundColor;
+\t\tswitch ( member ) {
+\t\t\tcase -1: return value.direction;
+\t\t\tcase -8: return value.skyColor;
+\t\t\tcase -9: return value.groundColor;
+\t\t}
 
 \t} else if ( value instanceof NativeRectAreaLightUniform ) {
 
-\t\tif ( id === 'color' ) return value.color;
-\t\tif ( id === 'position' ) return value.position;
-\t\tif ( id === 'halfWidth' ) return value.halfWidth;
-\t\tif ( id === 'halfHeight' ) return value.halfHeight;
+\t\tswitch ( member ) {
+\t\t\tcase -2: return value.color;
+\t\t\tcase -3: return value.position;
+\t\t\tcase -10: return value.halfWidth;
+\t\t\tcase -11: return value.halfHeight;
+\t\t}
 
 \t} else if ( value instanceof NativeShadowUniform ) {
 
-\t\tif ( id === 'shadowIntensity' ) return value.shadowIntensity;
-\t\tif ( id === 'shadowBias' ) return value.shadowBias;
-\t\tif ( id === 'shadowNormalBias' ) return value.shadowNormalBias;
-\t\tif ( id === 'shadowRadius' ) return value.shadowRadius;
-\t\tif ( id === 'shadowMapSize' ) return value.shadowMapSize;
+\t\tswitch ( member ) {
+\t\t\tcase -12: return value.shadowIntensity;
+\t\t\tcase -13: return value.shadowBias;
+\t\t\tcase -14: return value.shadowNormalBias;
+\t\t\tcase -15: return value.shadowRadius;
+\t\t\tcase -16: return value.shadowMapSize;
+\t\t}
 
 \t} else if ( value instanceof NativePointShadowUniform ) {
 
-\t\tif ( id === 'shadowIntensity' ) return value.shadowIntensity;
-\t\tif ( id === 'shadowBias' ) return value.shadowBias;
-\t\tif ( id === 'shadowNormalBias' ) return value.shadowNormalBias;
-\t\tif ( id === 'shadowRadius' ) return value.shadowRadius;
-\t\tif ( id === 'shadowMapSize' ) return value.shadowMapSize;
-\t\tif ( id === 'shadowCameraNear' ) return value.shadowCameraNear;
-\t\tif ( id === 'shadowCameraFar' ) return value.shadowCameraFar;
+\t\tswitch ( member ) {
+\t\t\tcase -12: return value.shadowIntensity;
+\t\t\tcase -13: return value.shadowBias;
+\t\t\tcase -14: return value.shadowNormalBias;
+\t\t\tcase -15: return value.shadowRadius;
+\t\t\tcase -16: return value.shadowMapSize;
+\t\t\tcase -17: return value.shadowCameraNear;
+\t\t\tcase -18: return value.shadowCameraFar;
+\t\t}
 
 \t}
 
@@ -1566,18 +1642,20 @@ ${nativeUniformBindingsEnabled ? '\t\tthis.nativeBindingSlot = nativeUniformBind
 \t\tthis.seq = [];
 \t\t/** @type {Record<string, NativeUniform>} */
 \t\tthis.map = {};
+\t\t/** @type {number[]} member code of each seq entry */
+\t\tthis.members = [];
 
 \t}
 
 \t/** @param {${glContext}} gl @param {NativeUniformValue} value @param {NativeTextures|undefined} textures @return {void} */
 \tsetValue( gl, value, textures ) {
 
-\t\tconst seq = this.seq;
+\t\tconst seq = this.seq, members = this.members;
 
 \t\tfor ( let i = 0, n = seq.length; i !== n; ++ i ) {
 
 \t\t\tconst u = seq[ i ];
-\t\t\tsetNativeUniformValue( u, gl, structuredUniformMember( value, u.id ), textures );
+\t\t\tsetNativeUniformValue( u, gl, structuredUniformMember( value, members[ i ], u.id ), textures );
 
 \t\t}
 
@@ -1619,6 +1697,7 @@ function addUniform( container, uniformObject ) {
 
 \tcontainer.seq.push( uniformObject );
 \tcontainer.map[ uniformObject.id ] = uniformObject;
+\tif ( container instanceof StructuredUniform ) container.members.push( structuredUniformMemberCode( uniformObject.id ) );
 
 }
 
@@ -1754,6 +1833,7 @@ class WebGLUniforms {
 
 \t\t}
 
+${fixedUniformFields}
 \t}
 
 ${fixedUniformMethods}
@@ -1805,8 +1885,8 @@ ${fixedUniformMethods}
 \t// direct, typed uploads (\`setMatrix4Value\` for the bind matrices; the
 \t// batching textures upload their own value on the line below each).
 
-\t/** @param {${glContext}} gl @param {NativeUniform[]} seq @param {NativeUniforms} values @param {NativeTextures|undefined} textures @param {NativeClippingUniform|undefined} clippingPlanes */
-\tstatic upload( gl, seq, values, textures, clippingPlanes ) {
+\t/** @param {${glContext}} gl @param {NativeUniform[]} seq @param {NativeUniforms} values @param {NativeTextures|undefined} textures @param {NativeClippingUniform|undefined} clippingPlanes @param {Array<import('../shaders/UniformsLib.js').NativeUniformSlot|undefined>|undefined} [slots] */
+\tstatic upload( gl, seq, values, textures, clippingPlanes, slots ) {
 
 \t\tfor ( let i = 0, n = seq.length; i !== n; ++ i ) {
 
@@ -1819,7 +1899,9 @@ ${fixedUniformMethods}
 
 \t\t\t}
 
-\t\t\tconst v = ${nativeUniformBindingsEnabled ? 'nativeUniformBindingValue( values, u )' : 'values[ u.id ]'};
+\t\t\t// The cell resolved with this list (see slotsOf), else a lookup by name.
+\t\t\tconst cached = slots !== undefined && i < slots.length ? slots[ i ] : undefined;
+\t\t\tconst v = cached !== undefined ? cached : ${nativeUniformBindingsEnabled ? 'nativeUniformBindingValue( values, u )' : 'values[ u.id ]'};
 
 \t\t\tif ( v.needsUpdate !== false ) {
 
@@ -1829,6 +1911,23 @@ ${fixedUniformMethods}
 \t\t\t}
 
 \t\t}
+
+\t}
+
+\t/** @param {NativeUniform[]} seq @param {NativeUniforms} values @return {Array<import('../shaders/UniformsLib.js').NativeUniformSlot|undefined>} */
+\tstatic slotsOf( seq, values ) {
+
+\t\t/** @type {Array<import('../shaders/UniformsLib.js').NativeUniformSlot|undefined>} */
+\t\tconst r = [];
+
+\t\tfor ( let i = 0, n = seq.length; i !== n; ++ i ) {
+
+\t\t\tconst u = seq[ i ];
+\t\t\tr.push( ${nativeUniformBindingsEnabled ? 'u.nativeBindingSlot === -1 ? undefined : nativeUniformBindingValue( values, u )' : "u.id === 'clippingPlanes' ? undefined : values[ u.id ]"} );
+
+\t\t}
+
+\t\treturn r;
 
 \t}
 
@@ -1863,8 +1962,64 @@ export { WebGLUniforms };
 `
 
 
-export const nativeWebGLUniformsSource = nativeUniformNamesEnabled ? optimizedNativeWebGLUniformsSource
-  : optimizedNativeWebGLUniformsSource.replace(fixedUniformMethods, '')
+
+/**
+ * Setters as direct calls. three stores each uniform's setter in a \`setValue\`
+ * field; natively that is a callable-object call, which takes the large
+ * \`NativeUniformValue\` union by value -- a copy and its reference counting on
+ * every uniform of every draw. Here each setter takes its uniform as the first
+ * parameter, and \`setNativeUniformValue\` switches on the uniform's GL type to
+ * call it directly, so the value is passed by reference. Same setters, same
+ * caches, same GL calls.
+ * @param {string} source @return {string}
+ */
+function directUniformSetters( source ) {
+
+  let out = source.replace(
+    /\/\*\* @this \{(SingleUniform|PureArrayUniform)\} (@param [^\n]*?)\*\/\nfunction (setValue\w+)\( gl, v, textures \) \{\n([\s\S]*?)\n\}\n/g,
+    (_match, receiver, params, name, body) =>
+      '/** @param {' + receiver + '} uniform ' + params + '*/\nfunction ' + name + '( uniform, gl, v, textures ) {\n' +
+      body.replace(/\bthis\b/g, 'uniform') + '\n}\n',
+  );
+  if ( /@this \{(SingleUniform|PureArrayUniform)\}/.test( out ) ) throw new Error( 'directUniformSetters: a setter kept @this' );
+
+  const dispatch = ( selector, receiver, name ) => {
+    const start = out.indexOf( 'function ' + selector + '( type ) {' );
+    const end = out.indexOf( '\n}\n', start );
+    if ( start < 0 || end < 0 ) throw new Error( 'directUniformSetters: ' + selector + ' not found' );
+    const body = out.slice( start, end );
+    const cases = body.slice( body.indexOf( 'switch ( type ) {' ) + 'switch ( type ) {'.length, body.lastIndexOf( '}' ) );
+    if ( ! /return setValue\w+;/.test( cases ) ) throw new Error( 'directUniformSetters: no cases in ' + selector );
+    const direct = '/** @param {' + receiver + '} uniform @param {' + 'GL' + '} gl @param {NativeUniformValue} v @param {NativeTextures|undefined} textures @return {void} */\n' +
+      'function ' + name + '( uniform, gl, v, textures ) {\n\n\tswitch ( uniform.type ) {\n' +
+      cases.replace( /return (setValue\w+);/g, '$1( uniform, gl, v, textures ); return;' ) +
+      '\n\t}\n\n\tthrow new Error( \'THREE.WebGLUniforms: Unsupported uniform type.\' );\n\n}\n';
+    // The selector now only validates the type at program link.
+    const validating = body.replace( /return setValue\w+;/g, 'return true;' );
+    out = out.slice( 0, start ) + validating + out.slice( end ) ;
+    return direct;
+  };
+  const glType = out.match( /@param \{([^}]+)\} gl @param \{NativeUniformValue\} v/ );
+  if ( ! glType ) throw new Error( 'directUniformSetters: gl type not found' );
+  const singular = dispatch( 'getSingularSetter', 'SingleUniform', 'callSingularSetter' ).replace( '{GL}', '{' + glType[ 1 ] + '}' );
+  const array = dispatch( 'getPureArraySetter', 'PureArrayUniform', 'callPureArraySetter' ).replace( '{GL}', '{' + glType[ 1 ] + '}' );
+  const replaceOnce = ( from, to ) => {
+    if ( out.split( from ).length !== 2 ) throw new Error( 'directUniformSetters: expected one ' + from );
+    out = out.replace( from, to );
+  };
+  replaceOnce( '/** @param {number} type @return {NativeSingularUniformSetter} */', '/** @param {number} type @return {boolean} */' );
+  replaceOnce( '/** @param {number} type @return {NativeArrayUniformSetter} */', '/** @param {number} type @return {boolean} */' );
+  replaceOnce( '\t\tthis.setValue = getSingularSetter( activeInfo.type );', '\t\tgetSingularSetter( activeInfo.type );' );
+  replaceOnce( '\t\tthis.setValue = getPureArraySetter( activeInfo.type );', '\t\tgetPureArraySetter( activeInfo.type );' );
+  replaceOnce( '\tif ( uniform instanceof SingleUniform ) uniform.setValue( gl, value, textures );\n\telse if ( uniform instanceof PureArrayUniform ) uniform.setValue( gl, value, textures );',
+    '\tif ( uniform instanceof SingleUniform ) callSingularSetter( uniform, gl, value, textures );\n\telse if ( uniform instanceof PureArrayUniform ) callPureArraySetter( uniform, gl, value, textures );' );
+  replaceOnce( '// --- Uniform Classes ---', singular + '\n' + array + '\n// --- Uniform Classes ---' );
+  return out;
+
+}
+
+export const nativeWebGLUniformsSource = directUniformSetters( nativeUniformNamesEnabled ? optimizedNativeWebGLUniformsSource
+  : optimizedNativeWebGLUniformsSource.replace(fixedUniformMethods, '') )
 
 /**
  * `UniformsLib.js`: the light classes and the typedefs go in above the table,

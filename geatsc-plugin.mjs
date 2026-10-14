@@ -2695,7 +2695,81 @@ class WebGLRenderer {
     }
     transformed = transformed.replaceAll(
       rendererUniformUploadSource,
-      "\t\t\t\tWebGLUniforms.upload( _gl, getUniformList( materialProperties ), m_uniforms, textures, materialProperties.clippingPlanes );",
+      "\t\t\t\tWebGLUniforms.upload( _gl, getUniformList( materialProperties ), m_uniforms, textures, materialProperties.clippingPlanes, getUniformSlots( materialProperties ) );",
+    );
+    // Each upload looked every uniform's value cell up by name in the
+    // material's uniforms dictionary. Resolve the cells once beside the
+    // uniform list they belong to; both are rebuilt together, and a list
+    // only ever changes by being recomputed.
+    transformed = replaceOne(
+      transformed,
+      "\t\tfunction getUniformList( materialProperties ) {",
+      `\t\t/** @param {import('./webgl/WebGLProperties.js').NativeWebGLPropertyBag} materialProperties */
+\t\tfunction getUniformSlots( materialProperties ) {
+
+\t\t\tconst list = getUniformList( materialProperties );
+
+\t\t\tif ( materialProperties.nativeUniformSlotsList !== list ) {
+
+\t\t\t\tmaterialProperties.nativeUniformSlots = WebGLUniforms.slotsOf( list, materialProperties.uniforms );
+\t\t\t\tmaterialProperties.nativeUniformSlotsList = list;
+
+\t\t\t}
+
+\t\t\treturn materialProperties.nativeUniformSlots;
+
+\t\t}
+
+\t\tfunction getUniformList( materialProperties ) {`,
+      fileName,
+      "WebGLRenderer resolved uniform slots",
+    );
+    // envMapIntensity and dfgLUT were looked up by name on every draw, and the
+    // ten light cells on every refresh; resolve them once per uniforms object.
+    transformed = replaceOne(
+      transformed,
+      "import { WebGLProperties } from './webgl/WebGLProperties.js';",
+      "import { WebGLProperties, NativeMaterialCells } from './webgl/WebGLProperties.js';",
+      fileName,
+      "WebGLRenderer material cells import",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t/** @param {import('./webgl/WebGLProperties.js').NativeWebGLPropertyBag} materialProperties */\n\t\tfunction getUniformSlots( materialProperties ) {",
+      `\t\t/** @param {import('./webgl/WebGLProperties.js').NativeWebGLPropertyBag} materialProperties @param {import('./shaders/UniformsLib.js').NativeUniforms} uniforms @return {NativeMaterialCells} */
+\t\tfunction nativeCells( materialProperties, uniforms ) {
+
+\t\t\tlet cells = materialProperties.nativeCells;
+
+\t\t\tif ( cells === undefined || cells.uniforms !== uniforms ) {
+
+\t\t\t\tcells = new NativeMaterialCells( uniforms );
+\t\t\t\tmaterialProperties.nativeCells = cells;
+
+\t\t\t}
+
+\t\t\treturn cells;
+
+\t\t}
+
+\t\t/** @param {import('./webgl/WebGLProperties.js').NativeWebGLPropertyBag} materialProperties */
+\t\tfunction getUniformSlots( materialProperties ) {`,
+      fileName,
+      "WebGLRenderer material cells helper",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\t\tm_uniforms.envMapIntensity.value = scene.environmentIntensity;",
+      "\t\t\t\tconst envMapIntensity = nativeCells( materialProperties, m_uniforms ).envMapIntensity;\n\t\t\t\tif ( envMapIntensity !== undefined ) envMapIntensity.value = scene.environmentIntensity;",
+      fileName,
+      "WebGLRenderer envMapIntensity cell",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tif ( m_uniforms.dfgLUT !== undefined ) {\n\n\t\t\t\tm_uniforms.dfgLUT.value = getDFGLUT();",
+      "\t\t\tconst dfgLUT = nativeCells( materialProperties, m_uniforms ).dfgLUT;\n\n\t\t\tif ( dfgLUT !== undefined ) {\n\n\t\t\t\tdfgLUT.value = getDFGLUT();",
+      fileName,
+      "WebGLRenderer dfgLUT cell",
     );
     transformed = replaceOne(
       transformed,
@@ -2822,7 +2896,7 @@ class WebGLRenderer {
       );
     }
     for (const name of nativeUniformNamesEnabled
-      ? ["toneMappingExposure", "cameraPosition"]
+      ? ["toneMappingExposure", "cameraPosition", "receiveShadow", "isOrthographic"]
       : []) {
       transformed = replaceOne(
         transformed,
@@ -2859,6 +2933,89 @@ class WebGLRenderer {
           : `p_uniforms.setValue( _gl, '${field}', ${local}, textures );`,
         fileName,
         `WebGLRenderer ${field} uniform`,
+      );
+    }
+    if (nativeUniformNamesEnabled && nativeUniformBindingsEnabled) {
+      // Every lit draw re-bound every shadow map: a unit allocation, a sampler
+      // uniform check and a texture bind per map, all redundant while the same
+      // program draws again with the same maps and nothing has rebound their
+      // units since. The program remembers what it bound and the slot stamps
+      // (WebGLState) of the units it used; when both still hold, the draw only
+      // allocates the same units, so later textures keep their unit numbers.
+      const shadowSetters =
+        "\t\t\t\tif ( directionalShadowMaps.length > 0 ) {\n\n\t\t\t\t\tp_uniforms.set_directionalShadowMap( _gl, directionalShadowMaps, textures );\n\n\t\t\t\t}\n\n" +
+        "\t\t\t\tif ( spotShadowMaps.length > 0 ) {\n\n\t\t\t\t\tp_uniforms.set_spotShadowMap( _gl, spotShadowMaps, textures );\n\n\t\t\t\t}\n\n" +
+        "\t\t\t\tif ( pointShadowMaps.length > 0 ) {\n\n\t\t\t\t\tp_uniforms.set_pointShadowMap( _gl, pointShadowMaps, textures );\n\n\t\t\t\t}\n";
+      transformed = replaceOne(
+        transformed,
+        shadowSetters,
+        "\t\t\t\tif ( nativeShadowMapsBound( program, directionalShadowMaps, spotShadowMaps, pointShadowMaps ) ) {\n\n" +
+          "\t\t\t\t\tfor ( let unit = 0; unit < program.nativeShadowUnits; unit ++ ) textures.allocateTextureUnit();\n\n" +
+          "\t\t\t\t} else {\n\n" +
+          shadowSetters.replaceAll("\n\t\t\t\t", "\n\t\t\t\t\t").replace(/^\t\t\t\t/, "\t\t\t\t\t") +
+          "\n\t\t\t\t\tnativeShadowMapsRecord( program, p_uniforms, directionalShadowMaps, spotShadowMaps, pointShadowMaps );\n\n" +
+          "\t\t\t\t}\n",
+        fileName,
+        "WebGLRenderer shadow-map binding fast path",
+      );
+      transformed = replaceOne(
+        transformed,
+        "\t\tfunction setProgram( camera, scene, geometry, material, object ) {",
+        `\t\t/**
+\t\t * @param {import('./webgl/WebGLProgram.js').WebGLProgram} program
+\t\t * @param {Array<import('../textures/Texture.js').Texture|null>} directional
+\t\t * @param {Array<import('../textures/Texture.js').Texture|null>} spot
+\t\t * @param {Array<import('../textures/Texture.js').Texture|null>} point
+\t\t * @return {boolean}
+\t\t */
+\t\tfunction nativeShadowMapsBound( program, directional, spot, point ) {
+
+\t\t\tconst counts = program.nativeShadowCounts;
+\t\t\tif ( counts[ 0 ] !== directional.length || counts[ 1 ] !== spot.length || counts[ 2 ] !== point.length ) return false;
+\t\t\tconst maps = program.nativeShadowMaps;
+\t\t\tlet k = 0;
+\t\t\tfor ( let i = 0; i < directional.length; i ++ ) if ( maps[ k ++ ] !== directional[ i ] ) return false;
+\t\t\tfor ( let i = 0; i < spot.length; i ++ ) if ( maps[ k ++ ] !== spot[ i ] ) return false;
+\t\t\tfor ( let i = 0; i < point.length; i ++ ) if ( maps[ k ++ ] !== point[ i ] ) return false;
+\t\t\tconst stamps = program.nativeShadowStamps;
+\t\t\tfor ( let unit = 0; unit < stamps.length; unit ++ ) if ( state.nativeSlotStamp( _gl.TEXTURE0 + unit ) !== stamps[ unit ] ) return false;
+\t\t\treturn true;
+
+\t\t}
+
+\t\t/**
+\t\t * @param {import('./webgl/WebGLProgram.js').WebGLProgram} program
+\t\t * @param {import('./webgl/WebGLUniforms.js').WebGLUniforms} p_uniforms
+\t\t * @param {Array<import('../textures/Texture.js').Texture|null>} directional
+\t\t * @param {Array<import('../textures/Texture.js').Texture|null>} spot
+\t\t * @param {Array<import('../textures/Texture.js').Texture|null>} point
+\t\t */
+\t\tfunction nativeShadowMapsRecord( program, p_uniforms, directional, spot, point ) {
+
+\t\t\tprogram.nativeShadowCounts[ 0 ] = directional.length;
+\t\t\tprogram.nativeShadowCounts[ 1 ] = spot.length;
+\t\t\tprogram.nativeShadowCounts[ 2 ] = point.length;
+\t\t\t/** @type {Array<import('../textures/Texture.js').Texture|null>} */
+\t\t\tconst maps = [];
+\t\t\tfor ( let i = 0; i < directional.length; i ++ ) maps.push( directional[ i ] );
+\t\t\tfor ( let i = 0; i < spot.length; i ++ ) maps.push( spot[ i ] );
+\t\t\tfor ( let i = 0; i < point.length; i ++ ) maps.push( point[ i ] );
+\t\t\tprogram.nativeShadowMaps = maps;
+\t\t\t// A setter whose uniform the program lacks allocates nothing.
+\t\t\tconst units = ( p_uniforms.fixed_directionalShadowMap !== undefined ? directional.length : 0 ) +
+\t\t\t\t( p_uniforms.fixed_spotShadowMap !== undefined ? spot.length : 0 ) +
+\t\t\t\t( p_uniforms.fixed_pointShadowMap !== undefined ? point.length : 0 );
+\t\t\tprogram.nativeShadowUnits = units;
+\t\t\t/** @type {number[]} */
+\t\t\tconst stamps = [];
+\t\t\tfor ( let unit = 0; unit < units; unit ++ ) stamps.push( state.nativeSlotStamp( _gl.TEXTURE0 + unit ) );
+\t\t\tprogram.nativeShadowStamps = stamps;
+
+\t\t}
+
+\t\tfunction setProgram( camera, scene, geometry, material, object ) {`,
+        fileName,
+        "WebGLRenderer shadow-map binding fast path helpers",
       );
     }
     // Three tests a tag and then reads fields off the untyped object; a
@@ -5050,21 +5207,34 @@ function requireWebGLStateTextureImageSource( value ) {
     transformed = replaceOne(
       transformed,
       "\tlet currentBoundTextures = {};",
-      "\t/** @type {Record<number, { type: number|undefined, texture: import('@geastack/native-webgl-angle/nativeWebGL').NativeHandle|null|undefined }>} */\n\tlet currentBoundTextures = {};",
+      // Indexed by slot - TEXTURE0 in a dense array: a texture bind on every
+      // sampler of every draw read this table, and an object keyed by 33984+
+      // is a hashed dictionary natively.
+      "\t/** @typedef {{ type: number|undefined, texture: import('@geastack/native-webgl-angle/nativeWebGL').NativeHandle|null|undefined }} NativeBoundTexture */\n" +
+        "\t/** @type {Array<NativeBoundTexture|undefined>} */\n\tlet currentBoundTextures = [];\n\n" +
+        "\t/** @param {number} slot @return {NativeBoundTexture|undefined} */\n" +
+        "\tfunction boundTextureAt( slot ) {\n\n\t\tconst index = slot - 0x84C0;\n\t\treturn index >= 0 && index < currentBoundTextures.length ? currentBoundTextures[ index ] : undefined;\n\n\t}\n\n" +
+        "\t/** @param {number} slot @param {NativeBoundTexture} bound */\n" +
+        "\tfunction setBoundTextureAt( slot, bound ) {\n\n\t\tconst index = slot - 0x84C0;\n\t\twhile ( currentBoundTextures.length <= index ) currentBoundTextures.push( undefined );\n\t\tcurrentBoundTextures[ index ] = bound;\n\n\t}\n\n" +
+        "\t/** @type {number[]} */\n\tlet slotStamps = [];\n\tlet nextSlotStamp = 0;\n\n" +
+        "\t/** @param {number} slot */\n" +
+        "\tfunction stampSlot( slot ) {\n\n\t\tconst index = slot - 0x84C0;\n\t\twhile ( slotStamps.length <= index ) slotStamps.push( - 1 );\n\t\tslotStamps[ index ] = ++ nextSlotStamp;\n\n\t}\n\n" +
+        "\t/** @param {number} slot @return {number} The slot's stamp, -1 if never bound since the last reset. */\n" +
+        "\tfunction slotStamp( slot ) {\n\n\t\tconst index = slot - 0x84C0;\n\t\treturn index >= 0 && index < slotStamps.length ? slotStamps[ index ] : - 1;\n\n\t}",
       fileName,
       "WebGLState bound texture table",
     );
     transformed = replaceOne(
       transformed,
       "\tfunction unbindTexture() {\n\n\t\tconst boundTexture = currentBoundTextures[ currentTextureSlot ];",
-      "\tfunction unbindTexture() {\n\n\t\tif ( typeof currentTextureSlot !== 'number' ) return;\n\n\t\tconst textureSlot = currentTextureSlot;\n\t\tconst boundTexture = currentBoundTextures[ textureSlot ];",
+      "\tfunction unbindTexture() {\n\n\t\tif ( typeof currentTextureSlot !== 'number' ) return;\n\n\t\tconst textureSlot = currentTextureSlot;\n\t\tconst boundTexture = boundTextureAt( textureSlot );",
       fileName,
       "WebGLState current texture slot narrowing",
     );
     transformed = replaceOne(
       transformed,
       "\t\tcurrentBoundTextures = {};",
-      "\t\tcurrentBoundTextures = /** @type {Record<number, { type: number|undefined, texture: import('@geastack/native-webgl-angle/nativeWebGL').NativeHandle|null|undefined }>} */ ( {} );",
+      "\t\tcurrentBoundTextures = [];",
       fileName,
       "WebGLState bound texture reset",
     );
@@ -5134,7 +5304,7 @@ function requireWebGLStateTextureImageSource( value ) {
     transformed = replaceOne(
       transformed,
       "\t\tlet boundTexture = currentBoundTextures[ webglSlot ];",
-      "\t\tconst textureSlot = /** @type {number} */ ( webglSlot );\n\n\t\tlet boundTexture = currentBoundTextures[ textureSlot ];",
+      "\t\tconst textureSlot = /** @type {number} */ ( webglSlot );\n\n\t\tlet boundTexture = boundTextureAt( textureSlot );",
       fileName,
       "WebGLState required texture slot",
     );
@@ -5154,7 +5324,7 @@ function requireWebGLStateTextureImageSource( value ) {
       .slice(bindTextureStart, bindTextureEnd)
       .replace(
         "currentBoundTextures[ webglSlot ] = boundTexture;",
-        "currentBoundTextures[ textureSlot ] = boundTexture;",
+        "setBoundTextureAt( textureSlot, boundTexture );",
       )
       .replaceAll(
         "currentTextureSlot !== webglSlot",
@@ -5175,9 +5345,33 @@ function requireWebGLStateTextureImageSource( value ) {
     transformed = replaceOne(
       transformed,
       "\t\t\tgl.bindTexture( webglType, webglTexture || emptyTextures[ webglType ] );",
-      "\t\t\tconst textureToBind = webglTexture || emptyTextures[ webglType ];\n\n\t\t\tif ( textureToBind === undefined ) throw new Error( 'THREE.WebGLState: Missing empty texture for binding target.' );\n\n\t\t\tgl.bindTexture( webglType, textureToBind );",
+      "\t\t\tconst textureToBind = webglTexture || emptyTextures[ webglType ];\n\n\t\t\tif ( textureToBind === undefined ) throw new Error( 'THREE.WebGLState: Missing empty texture for binding target.' );\n\n\t\t\tgl.bindTexture( webglType, textureToBind );\n\t\t\tstampSlot( textureSlot );",
       fileName,
       "WebGLState bound texture fallback",
+    );
+    // Each texture slot carries a stamp that changes whenever the slot is
+    // rebound, so a caller can tell its earlier binds are still in place
+    // (WebGLRenderer's shadow-map fast path).
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tgl.bindTexture( boundTexture.type, null );",
+      "\t\t\tgl.bindTexture( boundTexture.type, null );\n\t\t\tstampSlot( textureSlot );",
+      fileName,
+      "WebGLState unbind slot stamp",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tcurrentBoundTextures = [];",
+      "\t\tcurrentBoundTextures = [];\n\t\tslotStamps = [];",
+      fileName,
+      "WebGLState slot stamp reset",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tbindTexture: bindTexture,\n",
+      "\t\tbindTexture: bindTexture,\n\t\tnativeSlotStamp: slotStamp,\n",
+      fileName,
+      "WebGLState slot stamp export",
     );
     transformed = replaceOne(
       transformed,
@@ -5770,8 +5964,331 @@ ${transformed}`;
         );
       transformed = transformed.slice(0, start) + body + transformed.slice(end);
     }
+    // Every render pass updates every drawn geometry's attributes, and each
+    // update hashed the attribute into `buffers`. The WeakMap stays the
+    // authority; each data attribute also carries the entry its owning
+    // WebGLAttributes stored, tagged with that instance's number, so the
+    // per-draw read is a field load. Every write and delete of `buffers`
+    // keeps the field in step.
+    transformed = replaceOne(
+      transformed,
+      "function WebGLAttributes( gl ) {\n",
+      "let nextNativeAttributesOwner = 1;\n\nfunction WebGLAttributes( gl ) {\n\n\tconst nativeOwner = nextNativeAttributesOwner ++;\n",
+      fileName,
+      "WebGLAttributes front cache owner",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\treturn buffers.get( dataAttribute );",
+      "\t\tif ( dataAttribute.__nativeBufferOwner === nativeOwner ) return dataAttribute.__nativeBuffer;\n\n\t\treturn buffers.get( dataAttribute );",
+      fileName,
+      "WebGLAttributes front cache get",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tbuffers.delete( dataAttribute );",
+      "\t\t\tbuffers.delete( dataAttribute );\n\n\t\t\tif ( dataAttribute.__nativeBufferOwner === nativeOwner ) {\n\n\t\t\t\tdataAttribute.__nativeBufferOwner = 0;\n\t\t\t\tdataAttribute.__nativeBuffer = undefined;\n\n\t\t\t}",
+      fileName,
+      "WebGLAttributes front cache delete",
+    );
+    transformed = replaceOne(
+      transformed,
+      `\t\t\t\tbuffers.set( dataAttribute, {
+\t\t\t\t\tbuffer: dataAttribute.buffer,
+\t\t\t\t\ttype: dataAttribute.type,
+\t\t\t\t\tbytesPerElement: dataAttribute.elementSize,
+\t\t\t\t\tversion: dataAttribute.version
+\t\t\t\t} );`,
+      `\t\t\t\t/** @type {NativeAttributeBufferCache} */
+\t\t\t\tconst entry = {
+\t\t\t\t\tbuffer: dataAttribute.buffer,
+\t\t\t\t\ttype: dataAttribute.type,
+\t\t\t\t\tbytesPerElement: dataAttribute.elementSize,
+\t\t\t\t\tversion: dataAttribute.version
+\t\t\t\t};
+\t\t\t\tbuffers.set( dataAttribute, entry );
+\t\t\t\tdataAttribute.__nativeBufferOwner = nativeOwner;
+\t\t\t\tdataAttribute.__nativeBuffer = entry;`,
+      fileName,
+      "WebGLAttributes front cache GL attribute write",
+    );
+    transformed = replaceOne(
+      transformed,
+      `\t\tconst data = buffers.get( dataAttribute );
+
+\t\tif ( data === undefined ) {
+
+\t\t\tbuffers.set( dataAttribute, createBuffer( dataAttribute, bufferType ) );`,
+      `\t\tconst data = dataAttribute.__nativeBufferOwner === nativeOwner ? dataAttribute.__nativeBuffer : buffers.get( dataAttribute );
+
+\t\tif ( data === undefined ) {
+
+\t\t\tconst entry = createBuffer( dataAttribute, bufferType );
+\t\t\tbuffers.set( dataAttribute, entry );
+\t\t\tdataAttribute.__nativeBufferOwner = nativeOwner;
+\t\t\tdataAttribute.__nativeBuffer = entry;`,
+      fileName,
+      "WebGLAttributes front cache update",
+    );
+  }
+  if (
+    normalized.endsWith("/three/src/core/BufferAttribute.js") ||
+    normalized.endsWith("/three/src/core/InterleavedBuffer.js") ||
+    normalized.endsWith("/three/src/core/GLBufferAttribute.js")
+  ) {
+    // The native WebGLAttributes front cache (see WebGLAttributes above).
+    transformed = replaceOne(
+      transformed,
+      "\t\tthis.version = 0;\n",
+      `\t\tthis.version = 0;
+
+\t\t/** @type {number} The WebGLAttributes instance whose entry \`__nativeBuffer\` holds; 0 when none. */
+\t\tthis.__nativeBufferOwner = 0;
+\t\t/** @type {{ buffer: import('@geastack/native-webgl-angle/nativeWebGL').NativeHandle, type: number, bytesPerElement: number, version: number, size?: number }|undefined} */
+\t\tthis.__nativeBuffer = undefined;
+`,
+      fileName,
+      "native attribute buffer front cache fields",
+    );
+  }
+  if (
+    normalized.endsWith("/three/src/materials/Material.js") ||
+    normalized.endsWith("/three/src/textures/Texture.js") ||
+    normalized.endsWith("/three/src/textures/Source.js")
+  ) {
+    // The native WebGLProperties front cache (see WebGLProperties).
+    transformed = replaceOne(
+      transformed,
+      "\t\tthis.version = 0;\n",
+      `\t\tthis.version = 0;
+
+\t\t/** @type {number} The WebGLProperties instance whose bag \`__nativeProperties\` holds; 0 when none. */
+\t\tthis.__nativePropertiesOwner = 0;
+\t\t/** @type {import('../renderers/webgl/WebGLProperties.js').NativeWebGLPropertyBag|undefined} */
+\t\tthis.__nativeProperties = undefined;
+`,
+      fileName,
+      "native property bag front cache fields",
+    );
+  }
+  if (normalized.endsWith("/three/src/core/Object3D.js") || normalized.endsWith("/three/src/core/BufferGeometry.js")) {
+    // The native WebGLObjects front cache (see WebGLObjects).
+    transformed = replaceOne(
+      transformed,
+      "\t\tthis.uuid = generateUUID();\n",
+      `\t\tthis.uuid = generateUUID();
+
+\t\t/** @type {number} The WebGLObjects instance whose update frame \`__nativeObjectsFrame\` holds; 0 when none. */
+\t\tthis.__nativeObjectsOwner = 0;
+\t\t/** @type {number} */
+\t\tthis.__nativeObjectsFrame = - 1;
+`,
+      fileName,
+      "native objects update front cache fields",
+    );
+  }
+  if (normalized.endsWith("/three/src/core/BufferGeometry.js")) {
+    // The attribute-set stamp WebGLBindingStates' needsUpdate fast path reads.
+    transformed = replaceOne(
+      transformed,
+      "\t\t */\n\t\tthis.attributes = {};\n",
+      "\t\t */\n\t\tthis.attributes = {};\n\n\t\t/** @type {number} Bumped whenever the attribute set changes. */\n\t\tthis.__nativeAttributeStamp = 0;\n",
+      fileName,
+      "native attribute-set stamp field",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tthis.index = null;\n\t\tthis.attributes = {};\n",
+      "\t\tthis.index = null;\n\t\tthis.attributes = {};\n\t\tthis.__nativeAttributeStamp ++;\n",
+      fileName,
+      "native attribute-set stamp on copy",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tthis.attributes[ name ] = attribute;\n",
+      "\t\tthis.attributes[ name ] = attribute;\n\t\tthis.__nativeAttributeStamp ++;\n",
+      fileName,
+      "native attribute-set stamp on set",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tdelete this.attributes[ name ];\n",
+      "\t\tdelete this.attributes[ name ];\n\t\tthis.__nativeAttributeStamp ++;\n",
+      fileName,
+      "native attribute-set stamp on delete",
+    );
+  }
+  // Light uniforms (the light, shadow, ambient and probe structures
+  // markUniformsLightsNeedsUpdate flags) are written only by WebGLLights.setup
+  // and setupView. three re-uploads them whenever the program changes, which
+  // natively is a walk over every light struct member on nearly every draw.
+  // Each setup/setupView takes a new stamp; a program records the stamp whose
+  // values it last received and skips the upload while that stamp is current,
+  // because its GL uniforms already hold exactly those values. Shadow-map
+  // samplers are bound separately and still every draw.
+  if (normalized.endsWith("/three/src/renderers/webgl/WebGLLights.js")) {
+    transformed = replaceOne(
+      transformed,
+      "\tconst state = {\n\n\t\tversion: 0,\n",
+      "\tconst state = {\n\n\t\tversion: 0,\n\n\t\tnativeStamp: 0,\n",
+      fileName,
+      "WebGLLights native upload stamp field",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\tfunction setup( lights ) {\n",
+      "\tfunction setup( lights ) {\n\n\t\tstate.nativeStamp = ++ nativeLightsStamp;\n",
+      fileName,
+      "WebGLLights.setup native upload stamp",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\tfunction setupView( lights, camera ) {\n",
+      "\tfunction setupView( lights, camera ) {\n\n\t\tstate.nativeStamp = ++ nativeLightsStamp;\n",
+      fileName,
+      "WebGLLights.setupView native upload stamp",
+    );
+    transformed = replaceOne(
+      transformed,
+      "function WebGLLights(",
+      `let nativeLightsStamp = 0;
+
+// Every render state (the main view, and each nested render such as a mirror)
+// owns a WebGLLights whose version counts its own hash changes, so a material
+// drawn in two states sees a "new" version on every switch and three rebuilds
+// its program parameters to find the same program. Equal hashes (light and
+// shadow counts) share one structure id, which lets the renderer tell a
+// re-wire from a real program change.
+/** @type {Map<string, number>} */
+const nativeLightStructures = new Map();
+/** @param {{ directionalLength: number, pointLength: number, spotLength: number, rectAreaLength: number, hemiLength: number, numDirectionalShadows: number, numPointShadows: number, numSpotShadows: number, numSpotMaps: number, numLightProbes: number }} hash @return {number} */
+function nativeLightStructure( hash ) {
+
+\tconst key = [ hash.directionalLength, hash.pointLength, hash.spotLength, hash.rectAreaLength, hash.hemiLength,
+\t\thash.numDirectionalShadows, hash.numPointShadows, hash.numSpotShadows, hash.numSpotMaps, hash.numLightProbes ].join( ',' );
+\tlet structure = nativeLightStructures.get( key );
+
+\tif ( structure === undefined ) {
+
+\t\tstructure = nativeLightStructures.size + 1;
+\t\tnativeLightStructures.set( key, structure );
+
+\t}
+
+\treturn structure;
+
+}
+
+function WebGLLights(`,
+      fileName,
+      "WebGLLights native upload stamp counter",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tnativeStamp: 0,\n",
+      "\t\tnativeStamp: 0,\n\n\t\tnativeStructure: 0,\n",
+      fileName,
+      "WebGLLights native structure field",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tstate.version = nextVersion ++;",
+      "\t\t\tstate.version = nextVersion ++;\n\t\t\tstate.nativeStructure = nativeLightStructure( hash );",
+      fileName,
+      "WebGLLights native structure on hash change",
+    );
+  }
+  if (normalized.endsWith("/three/src/renderers/webgl/WebGLProgram.js")) {
+    transformed = replaceOne(
+      transformed,
+      "\tthis.cacheKey = cacheKey;\n",
+      "\tthis.cacheKey = cacheKey;\n\t/** The WebGLLights stamp whose light uniforms this program holds; 0 when none. */\n\tthis.nativeLightsStamp = 0;\n" +
+        "\t/** @type {Array<import('../../textures/Texture.js').Texture|null>} The shadow maps (directional, spot, point, in order) this program last bound, see WebGLRenderer's shadow-map fast path. */\n\tthis.nativeShadowMaps = [];\n" +
+        "\t/** @type {number[]} Lengths of the three arrays in nativeShadowMaps. */\n\tthis.nativeShadowCounts = [ - 1, - 1, - 1 ];\n" +
+        "\t/** @type {number[]} WebGLState slot stamps of the units those maps were bound to. */\n\tthis.nativeShadowStamps = [];\n" +
+        "\t/** The texture units the shadow-map setters allocated. */\n\tthis.nativeShadowUnits = 0;\n",
+      fileName,
+      "WebGLProgram native light upload stamp",
+    );
+  }
+  if (normalized.endsWith("/three/src/renderers/WebGLRenderer.js")) {
+    transformed = replaceOne(
+      transformed,
+      "\t\t\t\t\tmarkUniformsLightsNeedsUpdate( m_uniforms, refreshLights );",
+      `\t\t\t\t\tconst lightsStamp = lights.state.nativeStamp;
+\t\t\t\t\tconst uploadLights = refreshLights && program.nativeLightsStamp !== lightsStamp;
+\t\t\t\t\t// The ten light cells, resolved once per uniforms object (nativeCells).
+\t\t\t\t\tfor ( const cell of nativeCells( materialProperties, m_uniforms ).lights ) cell.needsUpdate = uploadLights;
+\t\t\t\t\tif ( uploadLights ) program.nativeLightsStamp = lightsStamp;`,
+      fileName,
+      "WebGLRenderer light uniform upload stamp",
+    );
+    const lightWiring = [
+      ["ambientLightColor", "ambient"], ["lightProbe", "probe"],
+      ["directionalLights", "directional"], ["directionalLightShadows", "directionalShadow"],
+      ["spotLights", "spot"], ["spotLightShadows", "spotShadow"], ["rectAreaLights", "rectArea"],
+      ["ltc_1", "rectAreaLTC1"], ["ltc_2", "rectAreaLTC2"],
+      ["pointLights", "point"], ["pointLightShadows", "pointShadow"], ["hemisphereLights", "hemi"],
+      ["directionalShadowMatrix", "directionalShadowMatrix"], ["spotLightMatrix", "spotLightMatrix"],
+      ["spotLightMap", "spotLightMap"], ["pointShadowMatrix", "pointShadowMatrix"],
+    ];
+    const wiringText = lightWiring.map(([u, s]) => `\t\t\t\tuniforms.${u}.value = lights.state.${s};\n`).join("");
+    // getProgram's wiring must still be exactly this list, or the re-wire below would miss a field.
+    if (!transformed.includes(wiringText.replace("\t\t\t\tuniforms.directionalShadowMatrix", "\n\t\t\t\tuniforms.directionalShadowMatrix"))) {
+      throw new Error(`Three WebGLRenderer light wiring at ${fileName} no longer matches the native re-wire list`);
+    }
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tmaterialProperties.lightsStateVersion = lightsStateVersion;\n",
+      "\t\t\tmaterialProperties.lightsStateVersion = lightsStateVersion;\n\t\t\tmaterialProperties.nativeLightsStructure = lights.state.nativeStructure;\n\t\t\tmaterialProperties.nativeShadowCount = shadowsArray.length;\n",
+      fileName,
+      "WebGLRenderer program light structure",
+    );
+    // A lights version from another render state with the same structure and
+    // shadow count selects the same program: point the material's light
+    // uniforms at this state's arrays (getProgram's wiring) instead of
+    // rebuilding the program parameters. Every other program check still runs.
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tif ( material.version === materialProperties.__version ) {\n\n\t\t\t\tif ( materialProperties.needsLights && ( materialProperties.lightsStateVersion !== lights.state.version ) ) {",
+      `\t\t\tif ( material.version === materialProperties.__version && materialProperties.needsLights &&
+\t\t\t\tmaterialProperties.lightsStateVersion !== lights.state.version &&
+\t\t\t\tmaterialProperties.nativeLightsStructure === lights.state.nativeStructure &&
+\t\t\t\tmaterialProperties.nativeShadowCount === currentRenderState.state.shadowsArray.length ) {
+
+\t\t\t\tconst uniforms = materialProperties.uniforms;
+${wiringText.replace(/\t\t\t\t/g, "\t\t\t\t")}
+\t\t\t\tmaterialProperties.lightsStateVersion = lights.state.version;
+
+\t\t\t}
+
+\t\t\tif ( material.version === materialProperties.__version ) {
+
+\t\t\t\tif ( materialProperties.needsLights && ( materialProperties.lightsStateVersion !== lights.state.version ) ) {`,
+      fileName,
+      "WebGLRenderer light re-wire across render states",
+    );
   }
   if (normalized.endsWith("/three/src/renderers/webgl/WebGLShadowMap.js")) {
+    // An app that replaces `shadowMap.render` (the browser's cached sun shadow)
+    // cannot do so natively: the field holds a `this`-bound function expression
+    // no app function converts to. This hook is an ordinary function-typed
+    // field instead; render() offers each call to it first, and a hook that
+    // returns true has rendered the shadows itself.
+    transformed = replaceOne(
+      transformed,
+      "\tconst scope = this;\n",
+      "\tconst scope = this;\n\n\t/** @type {((lights: Array<import('../../lights/Light.js').Light>, scene: import('../../scenes/Scene.js').Scene, camera: import('../../cameras/Camera.js').Camera) => boolean)|null} */\n\tthis.nativeRenderHook = null;\n",
+      fileName,
+      "WebGLShadowMap native render hook field",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tif ( scope.enabled === false ) return;\n",
+      "\t\tconst nativeRenderHook = scope.nativeRenderHook;\n\t\tif ( nativeRenderHook !== null && nativeRenderHook( lights, scene, camera ) ) return;\n\n\t\tif ( scope.enabled === false ) return;\n",
+      fileName,
+      "WebGLShadowMap native render hook call",
+    );
     transformed = replaceOne(
       transformed,
       "\t\tuniforms: {\n\t\t\tshadow_pass:",
@@ -7331,6 +7848,76 @@ ${indent}}`,
       fileName,
       "WebGLBindingStates wireframe cache write",
     );
+    // The nested cache is keyed by ids spelled as strings, so every draw formats
+    // three numbers and hashes them through string dictionaries. A numeric front
+    // cache answers repeat lookups: geometry id, then one exact integer packing
+    // object id, program id and wireframe (program ids past 2^16 skip it). Any
+    // release clears it before the nested states are deleted, so it never holds a
+    // state the nested cache no longer has.
+    transformed = replaceOne(
+      transformed,
+      "\tconst bindingStates = {};",
+      "\tconst bindingStates = {};\n\t/** @type {Map<number, Map<number, NativeBindingState>>} */\n\tconst fastBindingStates = new Map();",
+      fileName,
+      "WebGLBindingStates numeric front cache",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tconst wireframe = ( material.wireframe === true );\n\n\t\tlet objectMap = bindingStates[ geometry.id ];",
+      `\t\tconst wireframe = ( material.wireframe === true );
+\t\tconst fastKey = program.id < 65536 ? ( ( ( object.isInstancedMesh === true ) ? object.id : 0 ) * 65536 + program.id ) * 2 + ( wireframe ? 1 : 0 ) : - 1;
+\t\tlet fastGeometry = fastBindingStates.get( geometry.id );
+
+\t\tif ( fastKey >= 0 && fastGeometry !== undefined ) {
+
+\t\t\tconst cached = fastGeometry.get( fastKey );
+
+\t\t\tif ( cached !== undefined ) return cached;
+
+\t\t}
+
+\t\tlet objectMap = bindingStates[ geometry.id ];`,
+      fileName,
+      "WebGLBindingStates numeric front cache read",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tstateMap[ wireframeKey ] = state;\n\n\t\t}\n\n\t\treturn state;",
+      `\t\t\tstateMap[ wireframeKey ] = state;
+
+\t\t}
+
+\t\tif ( fastKey >= 0 ) {
+
+\t\t\tif ( fastGeometry === undefined ) {
+
+\t\t\t\tfastGeometry = new Map();
+\t\t\t\tfastBindingStates.set( geometry.id, fastGeometry );
+
+\t\t\t}
+
+\t\t\tfastGeometry.set( fastKey, state );
+
+\t\t}
+
+\t\treturn state;`,
+      fileName,
+      "WebGLBindingStates numeric front cache write",
+    );
+    for (const header of [
+      "\tfunction dispose() {\n\n\t\treset();",
+      "\tfunction releaseStatesOfGeometry( geometry ) {",
+      "\tfunction releaseStatesOfProgram( program ) {",
+      "\tfunction releaseStatesOfObject( object ) {",
+    ]) {
+      transformed = replaceOne(
+        transformed,
+        header,
+        `${header}\n\n\t\tfastBindingStates.clear();`,
+        fileName,
+        "WebGLBindingStates numeric front cache release",
+      );
+    }
     transformed = replaceOne(
       transformed,
       "\tfunction releaseStatesOfGeometry( geometry ) {",
@@ -7425,9 +8012,48 @@ ${indent}}`,
         "geometry._maxInstanceCount = geometryAttribute.meshPerAttribute * geometryAttribute.count;",
         "geometry._maxInstanceCount = requireVertexScalar( geometryAttribute.meshPerAttribute ) * requireVertexScalar( geometryAttribute.count );",
       );
+    // needsUpdate walked the program's attributes by name on every draw: two
+    // string-keyed lookups per attribute. A binding state is already specific
+    // to its geometry and program, so the set it cached can only change when
+    // the geometry's attribute set changes (setAttribute/deleteAttribute bump
+    // __nativeAttributeStamp) or the object's instance attributes are replaced.
+    // With both unchanged the walk's answer is the index comparison alone.
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tindex: /** @type {import('../../core/BufferAttribute.js').BufferAttribute|null} */ ( null )\n",
+      "\t\t\tindex: /** @type {import('../../core/BufferAttribute.js').BufferAttribute|null} */ ( null ),\n" +
+        "\t\t\tnativeAttributeStamp: - 1,\n" +
+        "\t\t\t/** @type {import('../../core/InstancedBufferAttribute.js').InstancedBufferAttribute|null} */\n" +
+        "\t\t\tnativeInstanceMatrix: null,\n" +
+        "\t\t\t/** @type {import('../../core/InstancedBufferAttribute.js').InstancedBufferAttribute|null} */\n" +
+        "\t\t\tnativeInstanceColor: null\n",
+      fileName,
+      "WebGLBindingStates attribute-set stamp fields",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\tfunction needsUpdate( object, geometry, program, index ) {\n",
+      "\tfunction needsUpdate( object, geometry, program, index ) {\n\n" +
+        "\t\tconst instanced = object instanceof InstancedMesh ? object : null;\n" +
+        "\t\tif ( currentState.nativeAttributeStamp === geometry.__nativeAttributeStamp &&\n" +
+        "\t\t\tcurrentState.nativeInstanceMatrix === ( instanced !== null ? instanced.instanceMatrix : null ) &&\n" +
+        "\t\t\tcurrentState.nativeInstanceColor === ( instanced !== null ? instanced.instanceColor : null ) ) return currentState.index !== index;\n",
+      fileName,
+      "WebGLBindingStates attribute-set fast path",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tcurrentState.attributes = cache;\n\t\tcurrentState.attributesNum = attributesNum;\n",
+      "\t\tcurrentState.attributes = cache;\n\t\tcurrentState.attributesNum = attributesNum;\n" +
+        "\t\tcurrentState.nativeAttributeStamp = geometry.__nativeAttributeStamp;\n" +
+        "\t\tcurrentState.nativeInstanceMatrix = object instanceof InstancedMesh ? object.instanceMatrix : null;\n" +
+        "\t\tcurrentState.nativeInstanceColor = object instanceof InstancedMesh ? object.instanceColor : null;\n",
+      fileName,
+      "WebGLBindingStates attribute-set stamp record",
+    );
   }
   if (normalized.endsWith("/three/src/renderers/webgl/WebGLObjects.js")) {
-    transformed = `import { BufferGeometry } from '../../core/BufferGeometry.js';\n\n${transformed}`;
+    transformed = `import { BufferGeometry } from '../../core/BufferGeometry.js';\nimport { Object3D } from '../../core/Object3D.js';\n\n${transformed}`;
     transformed = replaceOne(
       transformed,
       "\t\tconst instancedMesh = event.target;",
@@ -7472,12 +8098,51 @@ ${indent}}`,
         "updateMap.set( skeleton, frame )",
         "skeletonUpdateMap.set( skeleton, frame )",
       );
+    // Every pass updates every drawn object, and each update read the geometry's
+    // (and an instanced mesh's) frame out of a WeakMap. The maps stay the
+    // authority; the geometry and object also carry the frame this instance
+    // stored, tagged with its number, so the per-draw read is a field load.
+    transformed = replaceOne(
+      transformed,
+      "function WebGLObjects( gl, geometries, attributes, bindingStates, info ) {\n",
+      "let nextNativeObjectsOwner = 1;\n\nfunction WebGLObjects( gl, geometries, attributes, bindingStates, info ) {\n\n\tconst nativeOwner = nextNativeObjectsOwner ++;\n",
+      fileName,
+      "WebGLObjects front cache owner",
+    );
     transformed = replaceOne(
       transformed,
       "\t\tif ( geometryUpdateMap.get( buffergeometry ) !== frame ) {",
-      "\t\tconst geometryFrame = geometryUpdateMap.get( buffergeometry );\n\n\t\tif ( geometryFrame !== frame ) {",
+      "\t\tconst geometryFrame = buffergeometry.__nativeObjectsOwner === nativeOwner ? buffergeometry.__nativeObjectsFrame : geometryUpdateMap.get( buffergeometry );\n\n\t\tif ( geometryFrame !== frame ) {",
       fileName,
       "WebGLObjects stable geometry frame lookup",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tgeometryUpdateMap.set( buffergeometry, frame );",
+      "\t\t\tgeometryUpdateMap.set( buffergeometry, frame );\n\t\t\tbuffergeometry.__nativeObjectsOwner = nativeOwner;\n\t\t\tbuffergeometry.__nativeObjectsFrame = frame;",
+      fileName,
+      "WebGLObjects geometry frame front cache",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tif ( instancedMeshUpdateMap.get( object ) !== frame ) {",
+      "\t\t\tif ( ( object.__nativeObjectsOwner === nativeOwner ? object.__nativeObjectsFrame : instancedMeshUpdateMap.get( object ) ) !== frame ) {",
+      fileName,
+      "WebGLObjects instanced frame lookup",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\t\tinstancedMeshUpdateMap.set( object, frame );",
+      "\t\t\t\tinstancedMeshUpdateMap.set( object, frame );\n\t\t\t\tobject.__nativeObjectsOwner = nativeOwner;\n\t\t\t\tobject.__nativeObjectsFrame = frame;",
+      fileName,
+      "WebGLObjects instanced frame front cache",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tinstancedMeshUpdateMap.delete( instancedMesh );",
+      "\t\tinstancedMeshUpdateMap.delete( instancedMesh );\n\n\t\tif ( instancedMesh instanceof Object3D && instancedMesh.__nativeObjectsOwner === nativeOwner ) instancedMesh.__nativeObjectsOwner = 0;",
+      fileName,
+      "WebGLObjects instanced front cache cleanup",
     );
     transformed = replaceOne(
       transformed,
@@ -7505,6 +8170,7 @@ ${indent}}`,
 
 \t\tbuffergeometry.removeEventListener( 'dispose', onBufferGeometryDispose );
 \t\tgeometryUpdateMap.delete( buffergeometry );
+\t\tif ( buffergeometry.__nativeObjectsOwner === nativeOwner ) buffergeometry.__nativeObjectsOwner = 0;
 
 \t}
 
@@ -7600,12 +8266,22 @@ class NativeWebGLPropertyBag {
 \t\tthis.needsLights = undefined;
 \t\t/** @type {number} */
 \t\tthis.lightsStateVersion = -1;
+\t\t/** @type {number} light structure (WebGLLights nativeStructure) the program was built for */
+\t\tthis.nativeLightsStructure = -1;
+\t\t/** @type {number} shadow caster count the program was built for */
+\t\tthis.nativeShadowCount = -1;
 \t\t/** @type {boolean|import('./WebGLRenderStates.js').NativeLightProbeGrid|null} */
 \t\tthis.lightProbeGrid = null;
 \t\t/** @type {import('../shaders/UniformsLib.js').NativeUniforms} */
 \t\tthis.uniforms = {};
 \t\t/** @type {Array<import('./WebGLUniforms.js').NativeUniform>|null} */
 \t\tthis.uniformsList = null;
+\t\t/** @type {Array<import('../shaders/UniformsLib.js').NativeUniformSlot|undefined>|undefined} The value cells of \`uniformsList\`, in order. */
+\t\tthis.nativeUniformSlots = undefined;
+\t\t/** @type {Array<import('./WebGLUniforms.js').NativeUniform>|null} The list \`nativeUniformSlots\` was resolved for. */
+\t\tthis.nativeUniformSlotsList = null;
+\t\t/** @type {NativeMaterialCells|undefined} */
+\t\tthis.nativeCells = undefined;
 \t\t/** @type {string} */
 \t\tthis.outputColorSpace = '';
 \t\t/** @type {boolean} */
@@ -7669,49 +8345,148 @@ class NativeWebGLPropertyBag {
 
 }
 
+/**
+ * The value cells of one material uniforms object that WebGLRenderer touches on
+ * every draw or every refresh, resolved once instead of by name each time.
+ * Built for one uniforms object; a material given another gets a new one.
+ */
+class NativeMaterialCells {
+
+\t/** @param {import('../shaders/UniformsLib.js').NativeUniforms} uniforms */
+\tconstructor( uniforms ) {
+
+\t\tthis.uniforms = uniforms;
+\t\t/** @type {import('../shaders/UniformsLib.js').NativeUniformSlot|undefined} */
+\t\tthis.envMapIntensity = uniforms.envMapIntensity;
+\t\t/** @type {import('../shaders/UniformsLib.js').NativeUniformSlot|undefined} */
+\t\tthis.dfgLUT = uniforms.dfgLUT;
+\t\t/** @type {Array<import('../shaders/UniformsLib.js').NativeUniformSlot>} The light cells markUniformsLightsNeedsUpdate flags. */
+\t\tthis.lights = [];
+\t\tfor ( const name of [ 'ambientLightColor', 'lightProbe', 'directionalLights', 'directionalLightShadows', 'pointLights', 'pointLightShadows', 'spotLights', 'spotLightShadows', 'rectAreaLights', 'hemisphereLights' ] ) {
+
+\t\t\tconst cell = uniforms[ name ];
+\t\t\tif ( cell !== undefined ) this.lights.push( cell );
+
+\t\t}
+
+\t}
+
+}
+
+let nextNativePropertiesOwner = 1;
+
 function WebGLProperties() {
 
-\t/** @type {Map<string, NativeWebGLPropertyBag>} */
-\tconst properties = new Map();
+\tlet nativeOwner = nextNativePropertiesOwner ++;
 
-\t/** @param {WebGLPropertyOwner} object */
-\tfunction propertyKey( object ) {
+\t// One map per owner kind, keyed by the owner's numeric id: a lookup per draw
+\t// hashes a number instead of building and hashing a 'kind:id' string. A render
+\t// target is keyed by its texture's id in its own map, as before.
+\t/** @type {Map<number, NativeWebGLPropertyBag>} */
+\tconst materials = new Map();
+\t/** @type {Map<number, NativeWebGLPropertyBag>} */
+\tconst sources = new Map();
+\t/** @type {Map<number, NativeWebGLPropertyBag>} */
+\tconst textures = new Map();
+\t/** @type {Map<number, NativeWebGLPropertyBag>} */
+\tconst targets = new Map();
 
-\t\tif ( object instanceof Material ) return 'material:' + object.id;
-\t\tif ( object instanceof Source ) return 'source:' + object.id;
-\t\tif ( object instanceof Texture ) return 'texture:' + object.id;
-\t\treturn 'target:' + object.texture.id;
+\t/** @param {WebGLPropertyOwner} object @return {Map<number, NativeWebGLPropertyBag>} */
+\tfunction propertyMap( object ) {
+
+\t\tif ( object instanceof Material ) return materials;
+\t\tif ( object instanceof Source ) return sources;
+\t\tif ( object instanceof Texture ) return textures;
+\t\treturn targets;
+
+\t}
+
+\t/** @param {WebGLPropertyOwner} object @return {number} */
+\tfunction propertyId( object ) {
+
+\t\tif ( object instanceof Material ) return object.id;
+\t\tif ( object instanceof Source ) return object.id;
+\t\tif ( object instanceof Texture ) return object.id;
+\t\treturn object.texture.id;
+
+\t}
+
+\t/** @param {Map<number, NativeWebGLPropertyBag>} map @param {number} id @return {NativeWebGLPropertyBag} */
+\tfunction bagIn( map, id ) {
+
+\t\tlet bag = map.get( id );
+
+\t\tif ( bag === undefined ) {
+
+\t\t\tbag = new NativeWebGLPropertyBag();
+\t\t\tmap.set( id, bag );
+
+\t\t}
+
+\t\treturn bag;
 
 \t}
 
 \t/** @param {WebGLPropertyOwner} object */
 \tfunction has( object ) {
 
-\t\treturn properties.has( propertyKey( object ) );
+\t\treturn propertyMap( object ).has( propertyId( object ) );
 
 \t}
 
 \t/** @param {WebGLPropertyOwner} object */
 \tfunction get( object ) {
 
-\t\tconst key = propertyKey( object );
-\t\tlet map = properties.get( key );
+\t\t// Materials, sources and textures are read on every draw (textures once per
+\t\t// bound sampler). Each also carries the bag this instance stored for it,
+\t\t// tagged with the instance's number, so the read is a field load; the maps
+\t\t// stay the authority and remove/dispose keep the fields in step.
+\t\tif ( object instanceof Material ) {
 
-\t\tif ( map === undefined ) {
-
-\t\t\tmap = new NativeWebGLPropertyBag();
-\t\t\tproperties.set( key, map );
+\t\t\tif ( object.__nativePropertiesOwner === nativeOwner && object.__nativeProperties !== undefined ) return object.__nativeProperties;
+\t\t\tconst bag = bagIn( materials, object.id );
+\t\t\tobject.__nativePropertiesOwner = nativeOwner;
+\t\t\tobject.__nativeProperties = bag;
+\t\t\treturn bag;
 
 \t\t}
+\t\tif ( object instanceof Source ) {
 
-\t\treturn map;
+\t\t\tif ( object.__nativePropertiesOwner === nativeOwner && object.__nativeProperties !== undefined ) return object.__nativeProperties;
+\t\t\tconst bag = bagIn( sources, object.id );
+\t\t\tobject.__nativePropertiesOwner = nativeOwner;
+\t\t\tobject.__nativeProperties = bag;
+\t\t\treturn bag;
+
+\t\t}
+\t\tif ( object instanceof Texture ) {
+
+\t\t\tif ( object.__nativePropertiesOwner === nativeOwner && object.__nativeProperties !== undefined ) return object.__nativeProperties;
+\t\t\tconst bag = bagIn( textures, object.id );
+\t\t\tobject.__nativePropertiesOwner = nativeOwner;
+\t\t\tobject.__nativeProperties = bag;
+\t\t\treturn bag;
+
+\t\t}
+\t\treturn bagIn( targets, object.texture.id );
 
 \t}
 
 \t/** @param {WebGLPropertyOwner} object */
 \tfunction remove( object ) {
 
-\t\tproperties.delete( propertyKey( object ) );
+\t\tpropertyMap( object ).delete( propertyId( object ) );
+
+\t\tif ( object instanceof Material || object instanceof Source || object instanceof Texture ) {
+
+\t\t\tif ( object.__nativePropertiesOwner === nativeOwner ) {
+
+\t\t\t\tobject.__nativePropertiesOwner = 0;
+\t\t\t\tobject.__nativeProperties = undefined;
+
+\t\t\t}
+
+\t\t}
 
 \t}
 
@@ -7728,7 +8503,12 @@ function WebGLProperties() {
 
 \tfunction dispose() {
 
-\t\tproperties.clear();
+\t\tmaterials.clear();
+\t\tsources.clear();
+\t\ttextures.clear();
+\t\ttargets.clear();
+\t\t// Every field still tagged with the old number is now stale.
+\t\tnativeOwner = nextNativePropertiesOwner ++;
 
 \t}
 
@@ -7736,7 +8516,7 @@ function WebGLProperties() {
 
 }
 
-export { WebGLProperties };
+export { WebGLProperties, NativeWebGLPropertyBag, NativeMaterialCells };
 `;
   }
   if (normalized.endsWith("/three/src/renderers/webgl/WebGLInfo.js")) {

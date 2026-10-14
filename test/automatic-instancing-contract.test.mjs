@@ -249,14 +249,14 @@ for (const [name, relative, properties] of [
 // entry while leaving its shared geometry/material available to the scene.
 const objectsFile = fileURLToPath(new URL('../node_modules/three/src/renderers/webgl/WebGLObjects.js',import.meta.url))
 const objectsSource = transform({fileName:objectsFile,text:fs.readFileSync(objectsFile,'utf8')})
-const objectsFactory = new Function('BufferGeometry','InstancedMesh','WeakMap',
+const objectsFactory = new Function('BufferGeometry','InstancedMesh','Object3D','WeakMap',
   objectsSource.replace(/^import .*;\n/gm,'').replace('export { WebGLObjects };','return WebGLObjects;'))
 const deletedEntries = []
 class ObservedWeakMap extends WeakMap {
   delete(key) { deletedEntries.push(key); return super.delete(key) }
 }
 const releasedObjects = [], removedAttributes = []
-const objects = objectsFactory(THREE.BufferGeometry,THREE.InstancedMesh,ObservedWeakMap)(
+const objects = objectsFactory(THREE.BufferGeometry,THREE.InstancedMesh,THREE.Object3D,ObservedWeakMap)(
   {ARRAY_BUFFER:34962}, {get:(_object,geometry)=>geometry,update(){}},
   {update(){},remove:attribute=>removedAttributes.push(attribute)},
   {releaseStatesOfObject:object=>releasedObjects.push(object)}, {render:{frame:1}})
