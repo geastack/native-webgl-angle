@@ -98,6 +98,13 @@ const hostFunctions = [
   ...nativeUploadFunctions,
   ...nativeReadbackFunctions,
   ['threeWebGLBlitFramebuffer','gea_three_webgl_blit_framebuffer','void','extern "C" void gea_three_webgl_blit_framebuffer(double,double,double,double,double,double,double,double,double,double);'],
+  ['threeWebGLReadPixelsPack','gea_three_webgl_read_pixels_pack','void','extern "C" void gea_three_webgl_read_pixels_pack(double,double,double,double,double,double,double);'],
+  ['threeWebGLFenceSync','gea_three_webgl_fence_sync','double','extern "C" double gea_three_webgl_fence_sync();'],
+  ['threeWebGLClientWaitSync','gea_three_webgl_client_wait_sync','double','extern "C" double gea_three_webgl_client_wait_sync(double,double,double);'],
+  ['threeWebGLDeleteSync','gea_three_webgl_delete_sync','void','extern "C" void gea_three_webgl_delete_sync(double);'],
+  ['threeWebGLTimerBegin','gea_three_webgl_timer_begin','double','extern "C" double gea_three_webgl_timer_begin();'],
+  ['threeWebGLTimerEnd','gea_three_webgl_timer_end','void','extern "C" void gea_three_webgl_timer_end();'],
+  ['threeWebGLTimerResult','gea_three_webgl_timer_result','double','extern "C" double gea_three_webgl_timer_result(double);'],
   ['threeWebGLRenderbufferStorageMultisample','gea_three_webgl_renderbuffer_storage_multisample','void','extern "C" void gea_three_webgl_renderbuffer_storage_multisample(double,double,double,double,double);'],
   [
     "threeNativeProfilePhase",
@@ -512,6 +519,18 @@ const hostFunctions = [
     "gea_three_webgl_tex_storage_2d",
     "void",
     'extern "C" void gea_three_webgl_tex_storage_2d(double target, double levels, double internalFormat, double width, double height);',
+  ],
+  [
+    "threeWebGLTexStorage3D",
+    "gea_three_webgl_tex_storage_3d",
+    "void",
+    'extern "C" void gea_three_webgl_tex_storage_3d(double target, double levels, double internalFormat, double width, double height, double depth);',
+  ],
+  [
+    "threeWebGLFramebufferTextureLayer",
+    "gea_three_webgl_framebuffer_texture_layer",
+    "void",
+    'extern "C" void gea_three_webgl_framebuffer_texture_layer(double target, double attachment, double texture, double level, double layer);',
   ],
 
   [
@@ -6551,23 +6570,31 @@ class WebGLBackgroundPlaneMaterial extends ShaderMaterial {
     transformed = transformUniformsUtils(transformed, fileName);
   }
   if (normalized.endsWith("/three/src/utils.js")) {
-    const probeStart = "function probeAsync( gl, sync, interval ) {";
-    const probeEnd = "\n}\n\n/**\n * Converts a projection matrix";
-    const probeStartIndex = transformed.indexOf(probeStart);
-    const probeEndIndex = transformed.indexOf(probeEnd, probeStartIndex);
-    if (
-      probeStartIndex < 0 ||
-      probeEndIndex < 0 ||
-      transformed.indexOf(probeStart, probeStartIndex + 1) >= 0
-    ) {
+    // probeAsync keeps three's fence polling (the host implements fenceSync/clientWaitSync, so the
+    // async readback resolves when the GPU has finished the copy), once per frame: setTimeout's result
+    // types as Node's Timeout, which has no native boundary.
+    const probeRetries = transformed.split("setTimeout( probe, interval );").length - 1;
+    if (probeRetries !== 2) {
       throw new Error(
-        `Three async WebGL probe source at ${fileName} no longer matches the native adaptation`,
+        `Three async WebGL probe source at ${fileName} has ${probeRetries} probe timers; expected 2`,
       );
     }
+    transformed = transformed.replaceAll("setTimeout( probe, interval );", "requestAnimationFrame( probe );");
+    // Resolve with the sync status: a value-less resolve() of a Promise<void> lowers its optional
+    // payload incorrectly, and the callers only await completion.
+    const probeAt = transformed.indexOf("function probeAsync( gl, sync, interval ) {");
+    const probeDocAt = transformed.lastIndexOf(" * @return {Promise<void>}", probeAt);
+    const probeEndAt = transformed.indexOf("\n}\n", probeAt);
+    const probeBody = transformed.slice(probeAt, probeEndAt);
+    if (probeAt < 0 || probeDocAt < 0 || probeDocAt < transformed.lastIndexOf("/**", probeAt) || probeBody.split("resolve();").length !== 2) {
+      throw new Error(`Three async WebGL probe source at ${fileName} no longer matches the native adaptation`);
+    }
     transformed =
-      transformed.slice(0, probeStartIndex) +
-      "function probeAsync( gl, sync, interval ) {\n\n\treturn Promise.resolve( undefined );" +
-      transformed.slice(probeEndIndex);
+      transformed.slice(0, probeDocAt) +
+      " * @return {Promise<number>}" +
+      transformed.slice(probeDocAt + " * @return {Promise<void>}".length, probeAt) +
+      probeBody.replace("resolve();", "resolve( 1 );") +
+      transformed.slice(probeEndAt);
     transformed = replaceOne(
       transformed,
       "\t\t\tparams[ 0 ] += ' ' + stackTrace.getLocation();",
@@ -6633,13 +6660,6 @@ class WebGLBackgroundPlaneMaterial extends ShaderMaterial {
         `Three utils source at ${fileName} has ${warnCalls} console.warn calls; expected 2`,
       );
     transformed = transformed.replaceAll("console.warn(", "console.error(");
-    transformed = replaceOne(
-      transformed,
-      "@param {number} interval - The polling interval in milliseconds.\n * @return {Promise<void>} A promise that resolves when the sync completes or rejects if it fails.",
-      "@param {number} interval - The polling interval in milliseconds.\n * @return {Promise<undefined>} A promise that resolves when the sync completes or rejects if it fails.",
-      fileName,
-      "probeAsync resolved payload",
-    );
   }
   if (
     normalized.endsWith("/three/src/renderers/webgl/WebGLClipping.js") &&
@@ -10216,6 +10236,11 @@ class Texture extends EventDispatcher {`,
       fileName,
       "native volume texture source image",
     );
+    // Same JSDoc defect as DataTexture: a number documented as `boolean`. Without
+    // the correction an array texture is not a Texture and cannot be a uniform.
+    transformed = transformed
+      .replace(dataTextureUnpackAlignmentSource, nativeDataTextureUnpackAlignmentSource)
+      .replace(dataTextureOverlayUnpackAlignmentSource, nativeDataTextureOverlayUnpackAlignmentSource);
   }
   if (normalized.endsWith("/three/src/textures/ExternalTexture.js")) {
     transformed = replaceOne(

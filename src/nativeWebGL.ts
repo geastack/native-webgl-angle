@@ -1,4 +1,6 @@
+/** @gea-host-inert Reads scalar arguments, writes GL state only; never calls back into script. */
 declare function threeWebGLCopyTexImage2D(target:number,level:number,internalFormat:number,x:number,y:number,width:number,height:number,border:number):void;
+/** @gea-host-inert Reads scalar arguments, writes GL state only; never calls back into script. */
 declare function threeWebGLCopyTexSubImage2D(target:number,level:number,xoffset:number,yoffset:number,x:number,y:number,width:number,height:number):void;
 /// <reference path="./gea-native-types.d.ts" />
 
@@ -93,6 +95,7 @@ type NativeHandleKind =
   | 'program'
   | 'renderbuffer'
   | 'shader'
+  | 'sync'
   | 'texture'
   | 'uniform'
   | 'vertexArray'
@@ -200,11 +203,26 @@ function typedArrayKind(value: BufferSourceLike): number {
   return 1
 }
 
+/** @gea-host-inert Reads scalar arguments, writes GL state only; never calls back into script. */
 declare function threeWebGLBlitFramebuffer(sx0:number, sy0:number, sx1:number, sy1:number, dx0:number, dy0:number, dx1:number, dy1:number, mask:number, filter:number): void
+/** @gea-host-inert Reads scalar arguments, writes GL state only; never calls back into script. */
 declare function threeWebGLRenderbufferStorageMultisample(target:number, samples:number, format:number, width:number, height:number): void
 type ReadPixelsDestination = Uint8Array | Uint16Array | Float32Array | Uint32Array | Int32Array | Int16Array | Int8Array
 // Mutates the destination view; deliberately not marked host-inert.
+/** @gea-host-typed-array-element-writes Stores pixels into the destination typed array's elements only; no other property of any object, no callbacks. */
 declare function threeWebGLReadPixels(x: number, y: number, width: number, height: number, format: number, type: number, destination: ReadPixelsDestination, offset: number): void
+// WebGL2 asynchronous readback: into the bound PIXEL_PACK_BUFFER, fenced, then read through getBufferSubData.
+/** @gea-host-inert Reads scalar arguments, writes GL state only; never calls back into script. */
+declare function threeWebGLReadPixelsPack(x: number, y: number, width: number, height: number, format: number, type: number, offset: number): void
+/** @gea-host-inert Creates a GL sync object; never calls back into script. */
+declare function threeWebGLFenceSync(): number
+/** @gea-host-inert Reads scalar arguments, waits on GL state only; never calls back into script. */
+declare function threeWebGLClientWaitSync(sync: number, flags: number, timeout: number): number
+/** @gea-host-inert Reads scalar arguments, writes GL state only; never calls back into script. */
+declare function threeWebGLDeleteSync(sync: number): void
+// Mutates the destination view; deliberately not marked host-inert.
+/** @gea-host-typed-array-element-writes Stores buffer bytes into the destination typed array's elements only; no other property of any object, no callbacks. */
+declare function threeWebGLGetBufferSubData(target: number, srcByteOffset: number, destination: ReadPixelsDestination, dstOffset: number, length: number): void
 
 function zeroF32Array(length: number): f32[] {
   const out: f32[] = []
@@ -254,6 +272,14 @@ declare function threeWebGLTexImage2D(target: number, level: number, internalFor
 declare function threeWebGLTexSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, type: number, values: BufferSourceLike): void
 /** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
 declare function threeWebGLTexStorage2D(target: number, levels: number, internalFormat: number, width: number, height: number): void
+/** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
+declare function threeWebGLTexImage3D(target: number, level: number, internalFormat: number, width: number, height: number, depth: number, format: number, type: number, values: BufferSourceLike): void
+/** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
+declare function threeWebGLTexSubImage3D(target: number, level: number, xoffset: number, yoffset: number, zoffset: number, width: number, height: number, depth: number, format: number, type: number, values: BufferSourceLike): void
+/** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
+declare function threeWebGLTexStorage3D(target: number, levels: number, internalFormat: number, width: number, height: number, depth: number): void
+/** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
+declare function threeWebGLFramebufferTextureLayer(target: number, attachment: number, texture: number, level: number, layer: number): void
 
 // Shader source keyed by the stable native GL handle. A NativeShader instance
 // can be value-copied when it round-trips through a function-return / gcv
@@ -663,6 +689,10 @@ export class NativeWebGL2RenderingContext {
   readonly TIMEOUT_EXPIRED = 0x911B
   readonly CONDITION_SATISFIED = 0x911C
   readonly WAIT_FAILED = 0x911D
+  readonly SYNC_GPU_COMMANDS_COMPLETE = 0x9117
+  readonly PIXEL_PACK_BUFFER = 0x88EB
+  readonly PIXEL_PACK_BUFFER_BINDING = 0x88ED
+  readonly STREAM_READ = 0x88E1
   readonly COLOR = 0x1800
   readonly DEPTH_COMPONENT = 0x1902
   readonly ALPHA = 0x1906
@@ -935,7 +965,8 @@ export class NativeWebGL2RenderingContext {
     if (name === this.MAX_RENDERBUFFER_SIZE || name === this.MAX_3D_TEXTURE_SIZE) return 16384
     if (name === this.MAX_ARRAY_TEXTURE_LAYERS) return 2048
     if (name === this.MAX_VERTEX_ATTRIBS) return 16
-    if (name === this.MAX_TEXTURE_IMAGE_UNITS || name === this.MAX_VERTEX_TEXTURE_IMAGE_UNITS) return 16
+    // threejs-rendozer binds up to 32 textures per program (both stages); three checks a program's total against this.
+    if (name === this.MAX_TEXTURE_IMAGE_UNITS || name === this.MAX_VERTEX_TEXTURE_IMAGE_UNITS) return 32
     if (name === this.MAX_COMBINED_TEXTURE_IMAGE_UNITS) return 32
     if (name === this.MAX_VERTEX_UNIFORM_VECTORS || name === this.MAX_FRAGMENT_UNIFORM_VECTORS) return 1024
     if (name === this.MAX_VARYING_VECTORS) return 32
@@ -1106,10 +1137,10 @@ export class NativeWebGL2RenderingContext {
   texImage2D(target: number, level: number, internalFormat: number, widthOrFormat: number, heightOrType: number, borderOrSource?: number | NativeTextureImage | null, format?: number, type?: number, pixels?: BufferSourceLike | null): void {
     if (typeof borderOrSource === 'number' && typeof format === 'number' && typeof type === 'number') {
       threeWebGLTexImage2D(target, level, internalFormat, widthOrFormat, heightOrType, format, type, pixels ?? new Uint8Array(0))
-    } else if (borderOrSource && typeof borderOrSource !== 'number') {
+    } else if (borderOrSource !== null && borderOrSource !== undefined && typeof borderOrSource !== 'number') {
       threeWebGLTexImage2D(target, level, internalFormat, borderOrSource.width, borderOrSource.height, widthOrFormat, heightOrType, borderOrSource.data)
     } else {
-      throw new Error('Native texImage2D requires dimensions and typed pixels, or a decoded NativeTextureImage')
+      throw new Error(`Native texImage2D requires dimensions and typed pixels, or a decoded NativeTextureImage (target ${target}, level ${level}, internal format ${internalFormat}, source ${borderOrSource === null ? 'null' : typeof borderOrSource})`)
     }
   }
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, type: number, pixels: BufferSourceLike): void {
@@ -1125,9 +1156,15 @@ export class NativeWebGL2RenderingContext {
   // Three uploads 3D and array textures only from typed `image.data` /
   // `mipmap.data` (or `null` to allocate), the same carrier the 2D uploads
   // take; no TexImageSource ever reaches these entry points.
-  texImage3D(_target: number, _level: number, _internalFormat: number, _width: number, _height: number, _depth: number, _border: number, _format: number, _type: number, _source: BufferSourceLike | null): void {}
-  texSubImage3D(_target: number, _level: number, _xoffset: number, _yoffset: number, _zoffset: number, _width: number, _height: number, _depth: number, _format: number, _type: number, _source: BufferSourceLike): void {}
-  texStorage3D(_target: number, _levels: number, _internalFormat: number, _width: number, _height: number, _depth: number): void {}
+  texImage3D(target: number, level: number, internalFormat: number, width: number, height: number, depth: number, _border: number, format: number, type: number, source: BufferSourceLike | null): void {
+    threeWebGLTexImage3D(target, level, internalFormat, width, height, depth, format, type, source ?? new Uint8Array(0))
+  }
+  texSubImage3D(target: number, level: number, xoffset: number, yoffset: number, zoffset: number, width: number, height: number, depth: number, format: number, type: number, source: BufferSourceLike): void {
+    threeWebGLTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, source)
+  }
+  texStorage3D(target: number, levels: number, internalFormat: number, width: number, height: number, depth: number): void {
+    threeWebGLTexStorage3D(target, levels, internalFormat, width, height, depth)
+  }
 
   createVertexArray(): NativeHandle { return createHandle('vertexArray', nativeWebGLCreateVertexArray()) }
   bindVertexArray(vertexArray: NativeHandle | null): void { nativeWebGLBindVertexArray(nullableNativeHandle(vertexArray)) }
@@ -1150,7 +1187,9 @@ export class NativeWebGL2RenderingContext {
   framebufferRenderbuffer(target: number, attachment: number, renderbuffertarget: number, renderbuffer: NativeHandle | null): void {
     nativeWebGLFramebufferRenderbuffer(target, attachment, renderbuffertarget, nullableNativeHandle(renderbuffer))
   }
-  framebufferTextureLayer(_target: number, _attachment: number, _texture: NativeHandle | null, _level: number, _layer: number): void {}
+  framebufferTextureLayer(target: number, attachment: number, texture: NativeHandle | null, level: number, layer: number): void {
+    threeWebGLFramebufferTextureLayer(target, attachment, nullableNativeHandle(texture), level, layer)
+  }
   drawBuffers(buffers: number[]): void { nativeWebGLDrawBuffers(buffers[0] ?? this.COLOR_ATTACHMENT0) }
 
   clearColor(r: number, g: number, b: number, a: number): void { nativeWebGLClearColor(r, g, b, a) }
@@ -1193,7 +1232,13 @@ export class NativeWebGL2RenderingContext {
   invalidateFramebuffer(_target: number, _attachments: BufferSourceLike): void {}
   blitFramebuffer(sx0:number, sy0:number, sx1:number, sy1:number, dx0:number, dy0:number, dx1:number, dy1:number, mask:number, filter:number): void { threeWebGLBlitFramebuffer(sx0,sy0,sx1,sy1,dx0,dy0,dx1,dy1,mask,filter) }
   readBuffer(_src: number): void {}
-  readPixels(x: number, y: number, width: number, height: number, format: number, type: number, destination: ReadPixelsDestination, offset = 0): void {
+  // WebGL2 also reads into the bound PIXEL_PACK_BUFFER at a byte offset (three's
+  // readRenderTargetPixelsAsync): the GPU copy is recorded without waiting for the GPU.
+  readPixels(x: number, y: number, width: number, height: number, format: number, type: number, destination: ReadPixelsDestination | number, offset = 0): void {
+    if (typeof destination === 'number') {
+      threeWebGLReadPixelsPack(x, y, width, height, format, type, destination)
+      return
+    }
     threeWebGLReadPixels(x, y, width, height, format, type, destination, offset)
   }
   copyTexImage2D(target: number, level: number, internalFormat: number, x: number, y: number, width: number, height: number, border: number): void {threeWebGLCopyTexImage2D(target,level,internalFormat,x,y,width,height,border);}
@@ -1202,7 +1247,9 @@ export class NativeWebGL2RenderingContext {
   clearBufferiv(_buffer: number, _drawbuffer: number, _values: BufferSourceLike): void {}
   clearBufferuiv(_buffer: number, _drawbuffer: number, _values: BufferSourceLike): void {}
   getBufferParameter(_target: number, _pname: number): number { return 0 }
-  getBufferSubData(_target: number, _srcByteOffset: number, _destination: unknown): void {}
+  getBufferSubData(target: number, srcByteOffset: number, destination: ReadPixelsDestination, dstOffset = 0, length = 0): void {
+    threeWebGLGetBufferSubData(target, srcByteOffset, destination, dstOffset, length)
+  }
   getFramebufferAttachmentParameter(_target: number, _attachment: number, _pname: number): number { return 0 }
   getRenderbufferParameter(_target: number, _pname: number): number { return 0 }
   getTexParameter(_target: number, _pname: number): number { return 0 }
@@ -1213,9 +1260,14 @@ export class NativeWebGL2RenderingContext {
   uniformBlockBinding(_program: NativeProgram | null, _uniformBlockIndex: number, _uniformBlockBinding: number): void {}
   bindBufferBase(_target: number, _index: number, _buffer: NativeHandle | null): void {}
   bindBufferRange(_target: number, _index: number, _buffer: NativeHandle | null, _offset: number, _size: number): void {}
-  fenceSync(_condition: number, _flags: number): null { return null }
-  clientWaitSync(_sync: NativeHandle | null, _flags: number, _timeout: number): number { return 0 }
-  deleteSync(_sync: NativeHandle | null): void {}
+  fenceSync(_condition: number, _flags: number): NativeHandle | null {
+    const sync = threeWebGLFenceSync()
+    return sync ? createHandle('sync', sync) : null
+  }
+  clientWaitSync(sync: NativeHandle | null, flags: number, timeout: number): number {
+    return sync ? threeWebGLClientWaitSync(nativeHandle(sync), flags, timeout) : this.WAIT_FAILED
+  }
+  deleteSync(sync: NativeHandle | null): void { if (sync) threeWebGLDeleteSync(nativeHandle(sync)) }
   isBuffer(_buffer: NativeHandle | null): boolean { return true }
   isFramebuffer(_framebuffer: NativeHandle | null): boolean { return true }
   isProgram(_program: NativeProgram | null): boolean { return true }

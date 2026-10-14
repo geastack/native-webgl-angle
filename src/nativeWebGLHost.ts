@@ -35,6 +35,25 @@ export function nativeWebGLSwap(): void {
   threeWebGLSwap()
 }
 
+// GPU time-elapsed timers (GL_EXT_disjoint_timer_query): begin returns a timer id (0 when
+// unsupported), end closes the open timer, and result is the elapsed nanoseconds, or -1 while the
+// GPU has not finished it. A timer is released once its result has been read.
+export function nativeWebGLTimerBegin(): number {
+  return threeWebGLTimerBegin()
+}
+export function nativeWebGLTimerEnd(): void {
+  threeWebGLTimerEnd()
+}
+export function nativeWebGLTimerResult(timer: number): number {
+  return threeWebGLTimerResult(timer)
+}
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLTimerBegin(): number
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLTimerEnd(): void
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLTimerResult(timer: number): number
+
 export function logNativeWebGL(message: string): void {
   threeAngleSmokeLog(message)
 }
