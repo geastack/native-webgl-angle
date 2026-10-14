@@ -970,7 +970,9 @@ export class NativeWebGL2RenderingContext {
     if (name === this.MAX_COMBINED_TEXTURE_IMAGE_UNITS) return 32
     if (name === this.MAX_VERTEX_UNIFORM_VECTORS || name === this.MAX_FRAGMENT_UNIFORM_VECTORS) return 1024
     if (name === this.MAX_VARYING_VECTORS) return 32
-    if (name === this.MAX_SAMPLES || name === this.SAMPLES) return 4
+    // threejs-rendozer reports 8 when every multisampled renderbuffer format supports it (and steps down per format).
+    if (name === this.MAX_SAMPLES) return 8
+    if (name === this.SAMPLES) return 4
     if (name === this.MAX_UNIFORM_BUFFER_BINDINGS) return 24
     if (name === this.DEPTH_BITS) return 24
     if (name === this.STENCIL_BITS) return 8
