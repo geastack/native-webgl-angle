@@ -410,6 +410,10 @@ using PFNGLTEXIMAGE2DPROC = void (*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLi
 using PFNGLTEXPARAMETERFPROC = void (*)(GLenum, GLenum, GLfloat);
 using PFNGLTEXPARAMETERIPROC = void (*)(GLenum, GLenum, GLint);
 using PFNGLTEXSUBIMAGE2DPROC = void (*)(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void *);
+using PFNGLTEXIMAGE3DPROC = void (*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *);
+using PFNGLTEXSUBIMAGE3DPROC = void (*)(GLenum, GLint, GLint, GLint, GLint, GLsizei, GLsizei, GLsizei, GLenum, GLenum, const void *);
+using PFNGLTEXSTORAGE3DPROC = void (*)(GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei);
+using PFNGLFRAMEBUFFERTEXTURELAYERPROC = void (*)(GLenum, GLenum, GLuint, GLint, GLint);
 using PFNGLTEXSTORAGE2DPROC = void (*)(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
 using PFNGLUNIFORM1FPROC = void (*)(GLint, GLfloat);
 using PFNGLUNIFORM1FVPROC = void (*)(GLint, GLsizei, const GLfloat *);
@@ -447,6 +451,13 @@ using PFNGLCOPYTEXIMAGE2DPROC=void(*)(GLenum,GLint,GLenum,GLint,GLint,GLsizei,GL
 using PFNGLCOPYTEXSUBIMAGE2DPROC=void(*)(GLenum,GLint,GLint,GLint,GLint,GLint,GLsizei,GLsizei);
 using PFNGLBLITFRAMEBUFFERPROC = void (*)(GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLint,GLbitfield,GLenum);
 using PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC = void (*)(GLenum,GLsizei,GLenum,GLsizei,GLsizei);
+using GLuint64 = std::uint64_t;
+using GLsync = struct __GLsync *;
+using PFNGLMAPBUFFERRANGEPROC = void *(*)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
+using PFNGLUNMAPBUFFERPROC = GLboolean (*)(GLenum);
+using PFNGLFENCESYNCPROC = GLsync (*)(GLenum, GLbitfield);
+using PFNGLCLIENTWAITSYNCPROC = GLenum (*)(GLsync, GLbitfield, GLuint64);
+using PFNGLDELETESYNCPROC = void (*)(GLsync);
 struct AngleWebGLState {
   PFNGLCOPYTEXIMAGE2DPROC glCopyTexImage2D=nullptr;
   PFNGLCOPYTEXSUBIMAGE2DPROC glCopyTexSubImage2D=nullptr;
@@ -533,6 +544,12 @@ struct AngleWebGLState {
   PFNGLPIXELSTOREIPROC glPixelStorei = nullptr;
   PFNGLPOLYGONOFFSETPROC glPolygonOffset = nullptr;
   PFNGLREADPIXELSPROC glReadPixels = nullptr;
+  // WebGL2 asynchronous readback: PIXEL_PACK_BUFFER reads, sync objects and read-mapping.
+  PFNGLMAPBUFFERRANGEPROC glMapBufferRange = nullptr;
+  PFNGLUNMAPBUFFERPROC glUnmapBuffer = nullptr;
+  PFNGLFENCESYNCPROC glFenceSync = nullptr;
+  PFNGLCLIENTWAITSYNCPROC glClientWaitSync = nullptr;
+  PFNGLDELETESYNCPROC glDeleteSync = nullptr;
   PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage = nullptr;
   PFNGLSCISSORPROC glScissor = nullptr;
   PFNGLSHADERSOURCEPROC glShaderSource = nullptr;
@@ -547,6 +564,12 @@ struct AngleWebGLState {
   PFNGLTEXPARAMETERIPROC glTexParameteri = nullptr;
   PFNGLTEXSUBIMAGE2DPROC glTexSubImage2D = nullptr;
   PFNGLTEXSTORAGE2DPROC glTexStorage2D = nullptr;
+  // Array/3D entry points are optional: a GLES without them still starts,
+  // and uploads to those targets report GL_INVALID_OPERATION in the log.
+  PFNGLTEXIMAGE3DPROC glTexImage3D = nullptr;
+  PFNGLTEXSUBIMAGE3DPROC glTexSubImage3D = nullptr;
+  PFNGLTEXSTORAGE3DPROC glTexStorage3D = nullptr;
+  PFNGLFRAMEBUFFERTEXTURELAYERPROC glFramebufferTextureLayer = nullptr;
   PFNGLUNIFORM1FPROC glUniform1f = nullptr;
   PFNGLUNIFORM1FVPROC glUniform1fv = nullptr;
   PFNGLUNIFORM1IPROC glUniform1i = nullptr;
@@ -617,7 +640,7 @@ static bool nativeShadowColorAuditEnabled() {
 }
 
 static void smokeLog(const char *format, ...) {
-  char message[1024] = {};
+  char message[16384] = {};
   va_list args;
   va_start(args, format);
   std::vsnprintf(message, sizeof(message), format, args);
@@ -1029,6 +1052,11 @@ static bool loadGlSymbols() {
   LOAD_GL(glPixelStorei, PFNGLPIXELSTOREIPROC)
   LOAD_GL(glPolygonOffset, PFNGLPOLYGONOFFSETPROC)
   LOAD_GL(glReadPixels, PFNGLREADPIXELSPROC)
+  LOAD_GL(glMapBufferRange, PFNGLMAPBUFFERRANGEPROC)
+  LOAD_GL(glUnmapBuffer, PFNGLUNMAPBUFFERPROC)
+  LOAD_GL(glFenceSync, PFNGLFENCESYNCPROC)
+  LOAD_GL(glClientWaitSync, PFNGLCLIENTWAITSYNCPROC)
+  LOAD_GL(glDeleteSync, PFNGLDELETESYNCPROC)
   LOAD_GL(glCopyTexImage2D,PFNGLCOPYTEXIMAGE2DPROC)
   LOAD_GL(glCopyTexSubImage2D,PFNGLCOPYTEXSUBIMAGE2DPROC)
   LOAD_GL(glBlitFramebuffer, PFNGLBLITFRAMEBUFFERPROC)
@@ -1047,6 +1075,10 @@ static bool loadGlSymbols() {
   LOAD_GL(glTexParameteri, PFNGLTEXPARAMETERIPROC)
   LOAD_GL(glTexSubImage2D, PFNGLTEXSUBIMAGE2DPROC)
   LOAD_GL(glTexStorage2D, PFNGLTEXSTORAGE2DPROC)
+  gWebGL.glTexImage3D = loadGl<PFNGLTEXIMAGE3DPROC>("glTexImage3D");
+  gWebGL.glTexSubImage3D = loadGl<PFNGLTEXSUBIMAGE3DPROC>("glTexSubImage3D");
+  gWebGL.glTexStorage3D = loadGl<PFNGLTEXSTORAGE3DPROC>("glTexStorage3D");
+  gWebGL.glFramebufferTextureLayer = loadGl<PFNGLFRAMEBUFFERTEXTURELAYERPROC>("glFramebufferTextureLayer");
   LOAD_GL(glUniform1f, PFNGLUNIFORM1FPROC)
   LOAD_GL(glUniform1fv, PFNGLUNIFORM1FVPROC)
   LOAD_GL(glUniform1i, PFNGLUNIFORM1IPROC)
@@ -2498,6 +2530,36 @@ extern "C" void gea_three_webgl_tex_image_2d_bytes(double target, double level, 
   gWebGL.glTexImage2D(asGLenum(target), asGLint(level), asGLint(internalFormat), asGLsizei(width), asGLsizei(height), 0, asGLenum(format), asGLenum(type), bytes);
 }
 
+static bool requireGl(const void *fn, const char *name) {
+  if (fn) return true;
+  smokeLog("[native-webgl] %s is not provided by this GLES; the call is dropped", name);
+  return false;
+}
+
+extern "C" void gea_three_webgl_tex_image_3d_bytes(double target, double level, double internalFormat, double width, double height, double depth, double format, double type, const void* bytes, double) {
+  GEA_WEBGL_VOID("texImage3DBytes");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glTexImage3D), "glTexImage3D")) return;
+  gWebGL.glTexImage3D(asGLenum(target), asGLint(level), asGLint(internalFormat), asGLsizei(width), asGLsizei(height), asGLsizei(depth), 0, asGLenum(format), asGLenum(type), bytes);
+}
+
+extern "C" void gea_three_webgl_tex_sub_image_3d_bytes(double target, double level, double xoffset, double yoffset, double zoffset, double width, double height, double depth, double format, double type, const void* bytes, double) {
+  GEA_WEBGL_VOID("texSubImage3DBytes");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glTexSubImage3D), "glTexSubImage3D")) return;
+  gWebGL.glTexSubImage3D(asGLenum(target), asGLint(level), asGLint(xoffset), asGLint(yoffset), asGLint(zoffset), asGLsizei(width), asGLsizei(height), asGLsizei(depth), asGLenum(format), asGLenum(type), bytes);
+}
+
+extern "C" void gea_three_webgl_tex_storage_3d(double target, double levels, double internalFormat, double width, double height, double depth) {
+  GEA_WEBGL_VOID("texStorage3D");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glTexStorage3D), "glTexStorage3D")) return;
+  gWebGL.glTexStorage3D(asGLenum(target), asGLsizei(std::max(1.0, levels)), asGLenum(internalFormat), asGLsizei(width), asGLsizei(height), asGLsizei(depth));
+}
+
+extern "C" void gea_three_webgl_framebuffer_texture_layer(double target, double attachment, double texture, double level, double layer) {
+  GEA_WEBGL_VOID("framebufferTextureLayer");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glFramebufferTextureLayer), "glFramebufferTextureLayer")) return;
+  gWebGL.glFramebufferTextureLayer(asGLenum(target), asGLenum(attachment), asGLuint(texture), asGLint(level), asGLint(layer));
+}
+
 extern "C" void gea_three_webgl_tex_sub_image_2d_bytes(double target, double level, double xoffset, double yoffset, double width, double height, double format, double type, const void* bytes, double) {
   GEA_WEBGL_VOID("texSubImage2DBytes");
   gWebGL.glTexSubImage2D(asGLenum(target), asGLint(level), asGLint(xoffset), asGLint(yoffset), asGLsizei(width), asGLsizei(height), asGLenum(format), asGLenum(type), bytes);
@@ -2803,6 +2865,106 @@ extern "C" void gea_three_webgl_read_pixels_bytes(double x, double y, double wid
   if (!std::isfinite(x) || !std::isfinite(y) || x < INT32_MIN || x > INT32_MAX || y < INT32_MIN || y > INT32_MAX) error = 0x0501;
   if (error) { if (!hostReadbackError) hostReadbackError = error; return; }
   gWebGL.glReadPixels(asGLint(x),asGLint(y),asGLsizei(width),asGLsizei(height),asGLenum(format),asGLenum(type),bytes);
+}
+
+// WebGL2 asynchronous readback (three's readRenderTargetPixelsAsync): readPixels into the bound
+// PIXEL_PACK_BUFFER at a byte offset, a fence, polling, then getBufferSubData through a read mapping.
+extern "C" void gea_three_webgl_read_pixels_pack(double x, double y, double width, double height, double format, double type, double offset) {
+  GEA_WEBGL_VOID("readPixels");
+  GLint packBuffer = 0;
+  gWebGL.glGetIntegerv(0x88ED, &packBuffer);
+  if (!packBuffer || !std::isfinite(offset) || offset < 0 || std::floor(offset) != offset) { if (!hostReadbackError) hostReadbackError = 0x0502; return; }
+  gWebGL.glReadPixels(asGLint(x), asGLint(y), asGLsizei(width), asGLsizei(height), asGLenum(format), asGLenum(type),
+                      reinterpret_cast<void *>(static_cast<std::uintptr_t>(offset)));
+}
+static std::unordered_map<std::uint32_t, GLsync> gWebGLSyncs;
+static std::uint32_t gWebGLNextSync = 1;
+extern "C" double gea_three_webgl_fence_sync() {
+  GEA_WEBGL_DOUBLE("fenceSync");
+  GLsync sync = gWebGL.glFenceSync(0x9117 /* SYNC_GPU_COMMANDS_COMPLETE */, 0);
+  if (!sync) return 0.0;
+  const std::uint32_t id = gWebGLNextSync++;
+  gWebGLSyncs[id] = sync;
+  return static_cast<double>(id);
+}
+extern "C" double gea_three_webgl_client_wait_sync(double sync, double flags, double timeout) {
+  GEA_WEBGL_DOUBLE("clientWaitSync");
+  auto it = gWebGLSyncs.find(static_cast<std::uint32_t>(sync));
+  if (it == gWebGLSyncs.end()) return 0x911D; // WAIT_FAILED
+  return static_cast<double>(gWebGL.glClientWaitSync(it->second, static_cast<GLbitfield>(flags), static_cast<GLuint64>(std::max(0.0, timeout))));
+}
+extern "C" void gea_three_webgl_delete_sync(double sync) {
+  GEA_WEBGL_VOID("deleteSync");
+  auto it = gWebGLSyncs.find(static_cast<std::uint32_t>(sync));
+  if (it == gWebGLSyncs.end()) return;
+  gWebGL.glDeleteSync(it->second);
+  gWebGLSyncs.erase(it);
+}
+// GPU timers for the app's frame profiler, on GL_EXT_disjoint_timer_query.
+struct HostGpuTimers {
+  bool initialized = false, supported = false;
+  void (*gen)(GLsizei, GLuint *) = nullptr;
+  void (*remove)(GLsizei, const GLuint *) = nullptr;
+  void (*begin)(GLenum, GLuint) = nullptr;
+  void (*end)(GLenum) = nullptr;
+  void (*available)(GLuint, GLenum, GLuint *) = nullptr;
+  void (*result)(GLuint, GLenum, std::uint64_t *) = nullptr;
+  bool open = false;
+  bool ensure() {
+    if (initialized) return supported;
+    initialized = true;
+    const auto extensions = reinterpret_cast<const char *>(gWebGL.glGetString(0x1F03));
+    const std::string list = " " + std::string(extensions ? extensions : "") + " ";
+    if (list.find(" GL_EXT_disjoint_timer_query ") == std::string::npos) return false;
+    gen = loadGl<decltype(gen)>("glGenQueriesEXT");
+    remove = loadGl<decltype(remove)>("glDeleteQueriesEXT");
+    begin = loadGl<decltype(begin)>("glBeginQueryEXT");
+    end = loadGl<decltype(end)>("glEndQueryEXT");
+    available = loadGl<decltype(available)>("glGetQueryObjectuivEXT");
+    result = loadGl<decltype(result)>("glGetQueryObjectui64vEXT");
+    supported = gen && remove && begin && end && available && result;
+    return supported;
+  }
+};
+static HostGpuTimers gHostGpuTimers;
+extern "C" double gea_three_webgl_timer_begin() {
+  GEA_WEBGL_DOUBLE("timerBegin");
+  auto &t = gHostGpuTimers;
+  if (!t.ensure() || t.open) return 0.0;
+  GLuint query = 0;
+  t.gen(1, &query);
+  if (!query) return 0.0;
+  t.begin(0x88BF /* TIME_ELAPSED_EXT */, query);
+  t.open = true;
+  return static_cast<double>(query);
+}
+extern "C" void gea_three_webgl_timer_end() {
+  GEA_WEBGL_VOID("timerEnd");
+  auto &t = gHostGpuTimers;
+  if (!t.supported || !t.open) return;
+  t.end(0x88BF);
+  t.open = false;
+}
+extern "C" double gea_three_webgl_timer_result(double timer) {
+  GEA_WEBGL_DOUBLE("timerResult");
+  auto &t = gHostGpuTimers;
+  const GLuint query = static_cast<GLuint>(timer);
+  if (!t.supported || !query) return 0.0;
+  GLuint ready = 0;
+  t.available(query, 0x8867 /* QUERY_RESULT_AVAILABLE */, &ready);
+  if (!ready) return -1.0;
+  std::uint64_t ns = 0;
+  t.result(query, 0x8866 /* QUERY_RESULT */, &ns);
+  t.remove(1, &query);
+  return static_cast<double>(ns);
+}
+extern "C" void gea_three_webgl_get_buffer_sub_data_bytes(double target, double srcOffset, void *bytes, double byteLength) {
+  GEA_WEBGL_VOID("getBufferSubData");
+  if (!bytes || !(byteLength > 0) || !(srcOffset >= 0)) { if (!hostReadbackError) hostReadbackError = 0x0501; return; }
+  void *mapped = gWebGL.glMapBufferRange(asGLenum(target), static_cast<GLintptr>(srcOffset), static_cast<GLsizeiptr>(byteLength), 0x0001 /* MAP_READ_BIT */);
+  if (!mapped) { if (!hostReadbackError) hostReadbackError = 0x0502; return; }
+  std::memcpy(bytes, mapped, static_cast<std::size_t>(byteLength));
+  gWebGL.glUnmapBuffer(asGLenum(target));
 }
 
 extern "C" void gea_three_webgl_blit_framebuffer(double sx0,double sy0,double sx1,double sy1,double dx0,double dy0,double dx1,double dy1,double mask,double filter) {

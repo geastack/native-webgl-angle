@@ -22,4 +22,25 @@ template <typename... T> inline void gea_three_webgl_read_pixels_native(double x
   double format, double type, const std::variant<T...>& destination, double offset) {
   std::visit([&](const auto& view) { gea_three_webgl_read_pixels_native(x,y,width,height,format,type,view,offset); }, destination);
 }`
+], [
+  // getBufferSubData writes a pack buffer's bytes into the caller's view, in place.
+  'threeWebGLGetBufferSubData', 'gea_three_webgl_get_buffer_sub_data_native', 'void', `
+#include <variant>
+extern "C" void gea_three_webgl_get_buffer_sub_data_bytes(double target, double srcOffset, void* bytes, double byteLength);
+template <typename T> inline void gea_three_webgl_get_buffer_sub_data_native(double target, double srcOffset,
+  const gea::Ref<gea::TypedArray<T>>& destination, double dstOffset, double length) {
+  if (!destination || !std::isfinite(dstOffset) || dstOffset < 0 || std::floor(dstOffset) != dstOffset || dstOffset > destination->size() ||
+      !std::isfinite(length) || length < 0 || std::floor(length) != length) {
+    gea_three_webgl_get_buffer_sub_data_bytes(target, srcOffset, nullptr, -1); return;
+  }
+  const auto start = static_cast<std::size_t>(dstOffset);
+  const auto count = length == 0 ? destination->size() - start : static_cast<std::size_t>(length);
+  if (count > destination->size() - start) { gea_three_webgl_get_buffer_sub_data_bytes(target, srcOffset, nullptr, -1); return; }
+  auto* data = destination->data();
+  gea_three_webgl_get_buffer_sub_data_bytes(target, srcOffset, data ? data + start : nullptr, static_cast<double>(count * sizeof(T)));
+}
+template <typename... T> inline void gea_three_webgl_get_buffer_sub_data_native(double target, double srcOffset,
+  const std::variant<T...>& destination, double dstOffset, double length) {
+  std::visit([&](const auto& view) { gea_three_webgl_get_buffer_sub_data_native(target, srcOffset, view, dstOffset, length); }, destination);
+}`
 ]];
