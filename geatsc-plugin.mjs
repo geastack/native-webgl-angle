@@ -4866,12 +4866,14 @@ function requireWebGLStateTextureImageSource( value ) {
 
 \t\t\t} else {
 
-\t\t\t\tgl.texImage2D( ${sourceArguments(9, 8, true)} );
+\t\t\t\tgl.texImage2D( ${sourceArguments(9, 8, true).replace("arguments[ 5 ]", "0")} );
 
 \t\t\t}`,
       fileName,
       "WebGLState native TexImageSource image expansion",
     );
+    // The pixel form above passes border 0 (WebGL requires it): forwarding `arguments[ 5 ]` types it from
+    // every caller's sixth argument (border or image), a nested union the compiler's emitter recasts to undefined.
     // Preserve the actual argument count (and Function#length) while stating
     // the native upload protocol at the forwarding boundary. An arguments
     // object with no formal parameters otherwise erases every pixel source
@@ -6176,13 +6178,9 @@ class WebGLBackgroundCubeMaterial extends ShaderMaterial {
 \tsetEnvironment( texture ) {
 
 \t\tthis.uniforms.envMap.value = texture;
-
-\t}
-
-\t/** @this {WebGLBackgroundCubeMaterial} */
-\tget envMap() {
-
-\t\treturn uniformTexture( this.uniforms.envMap );
+\t\t// The renderer reads material.envMap as the base Material field (a subclass getter is not
+\t\t// dispatched through that read), so keep the field itself in step.
+\t\tthis.envMap = texture;
 
 \t}
 
@@ -6194,13 +6192,7 @@ class WebGLBackgroundPlaneMaterial extends ShaderMaterial {
 \tsetMap( texture ) {
 
 \t\tthis.uniforms.t2D.value = texture;
-
-\t}
-
-\t/** @this {WebGLBackgroundPlaneMaterial} */
-\tget map() {
-
-\t\treturn uniformTexture( this.uniforms.t2D );
+\t\tthis.map = texture;
 
 \t}
 
@@ -8878,7 +8870,10 @@ function WebGLRenderState( extensions ) {`,
 \t\t\t\tdepthTextureImage.height !== renderTarget.height ) {
 
 \t\t\tdepthTextureImage.width = renderTarget.width;
-\t\t\tdepthTextureImage.height = renderTarget.height;`,
+\t\t\tdepthTextureImage.height = renderTarget.height;
+\t\t\t// requireTextureImageRecord returns a copy, so a 2D depth texture's own image must be replaced
+\t\t\t// for the upload below to use the new size (upstream writes the image in place).
+\t\t\tif ( ! isCube ) renderTarget.depthTexture.image = { width: renderTarget.width, height: renderTarget.height, depth: depthTextureImage.depth !== undefined ? depthTextureImage.depth : 1 };`,
       fileName,
       "WebGLTextures depth image record narrowing",
     );
@@ -8959,7 +8954,9 @@ function WebGLRenderState( extensions ) {`,
       );
     transformed =
       transformed.slice(0, dimensionsStartIndex) +
-      "\tfunction getDimensions( image ) {\n\n\t\tconst imageRecord = requireTextureImageRecord( image );\n\t\t_imageDimensions.width = imageRecord.width;\n\t\t_imageDimensions.height = imageRecord.height;\n\n\t\treturn _imageDimensions;" +
+      // The records reaching here already carry width and height; passing them through
+      // requireTextureImageRecord recasts them into a nested union the emitter drops to undefined.
+      "\tfunction getDimensions( image ) {\n\n\t\t_imageDimensions.width = image.width;\n\t\t_imageDimensions.height = image.height;\n\n\t\treturn _imageDimensions;" +
       transformed.slice(dimensionsEndIndex);
     transformed = replaceOne(
       transformed,
