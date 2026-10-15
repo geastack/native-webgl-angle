@@ -1479,6 +1479,16 @@ extern "C" void gea_three_webgl_swap() {
     }
   }
 #endif
+  // The debug dump and recording read the window into client memory. A PIXEL_PACK_BUFFER the app left
+  // bound (WebGL2 asynchronous readback) would make the pointer a buffer offset instead, so the read
+  // runs with it unbound and the binding is restored afterwards.
+  const auto readWindowRgba = [](int w, int h, unsigned char *rgba) {
+    GLint packBuffer = 0;
+    if (gWebGL.glGetIntegerv) gWebGL.glGetIntegerv(0x88ED /* PIXEL_PACK_BUFFER_BINDING */, &packBuffer);
+    if (packBuffer) gWebGL.glBindBuffer(0x88EB /* PIXEL_PACK_BUFFER */, 0);
+    gWebGL.glReadPixels(0, 0, w, h, GL_RGBA_VALUE, GL_UNSIGNED_BYTE, rgba);
+    if (packBuffer) gWebGL.glBindBuffer(0x88EB, static_cast<GLuint>(packBuffer));
+  };
   // Debug frame dump: GEA_WEBGL_DUMP_FRAME=<path-prefix> writes the full
   // framebuffer of frames 90/180/300 as PPM (P6) — visual ground truth for
   // native-vs-browser comparisons without needing a window screenshot.
@@ -1489,7 +1499,7 @@ extern "C" void gea_three_webgl_swap() {
       const int w = gWebGL.widthPx;
       const int h = gWebGL.heightPx;
       std::vector<unsigned char> rgba(static_cast<size_t>(w) * h * 4);
-      gWebGL.glReadPixels(0, 0, w, h, GL_RGBA_VALUE, GL_UNSIGNED_BYTE, rgba.data());
+      readWindowRgba(w, h, rgba.data());
       char path[512];
       std::snprintf(path, sizeof path, "%s-f%d.ppm", dumpPrefix, dumpCount);
       if (FILE *file = std::fopen(path, "wb")) {
@@ -1538,7 +1548,7 @@ extern "C" void gea_three_webgl_swap() {
       if (due > recordWritten && gWebGL.widthPx == recordW && gWebGL.heightPx == recordH) {
         std::vector<unsigned char> rgba(static_cast<size_t>(recordW) * recordH * 4);
         std::vector<unsigned char> rgb(static_cast<size_t>(recordW) * recordH * 3);
-        gWebGL.glReadPixels(0, 0, recordW, recordH, GL_RGBA_VALUE, GL_UNSIGNED_BYTE, rgba.data());
+        readWindowRgba(recordW, recordH, rgba.data());
         for (int y = 0; y < recordH; ++y) {
           const unsigned char *src = rgba.data() + static_cast<size_t>(recordH - 1 - y) * recordW * 4;
           unsigned char *dst = rgb.data() + static_cast<size_t>(y) * recordW * 3;
