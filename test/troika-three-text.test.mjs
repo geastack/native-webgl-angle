@@ -131,7 +131,8 @@ console.log(JSON.stringify({
 }))
 `)
 
-  const result = spawnSync(process.execPath, ['--experimental-loader', loader, runner], {
+  // A loader is named by URL: a Windows path's drive letter reads as a scheme.
+  const result = spawnSync(process.execPath, ['--experimental-loader', pathToFileURL(loader).href, runner], {
     cwd: temporaryRoot,
     encoding: 'utf8',
   })
@@ -145,12 +146,15 @@ console.log(JSON.stringify({
   const modulesDir = path.join(temporaryRoot, 'node_modules')
   const geastackDir = path.join(modulesDir, '@geastack')
   fs.mkdirSync(geastackDir, { recursive: true })
-  fs.symlinkSync(packageDir, path.join(geastackDir, 'native-webgl-angle'), 'dir')
-  fs.symlinkSync(threeDir, path.join(modulesDir, 'three'), 'dir')
+  // A symbolic link needs a privilege an ordinary Windows account lacks; a
+  // junction is the directory link anyone may create there.
+  const linkType = process.platform === 'win32' ? 'junction' : 'dir'
+  fs.symlinkSync(packageDir, path.join(geastackDir, 'native-webgl-angle'), linkType)
+  fs.symlinkSync(threeDir, path.join(modulesDir, 'three'), linkType)
   fs.symlinkSync(
     packageRoot('troika-three-text'),
     path.join(modulesDir, 'troika-three-text'),
-    'dir',
+    linkType,
   )
   const routeEntry = path.join(temporaryRoot, 'route-entry.js')
   fs.writeFileSync(routeEntry, "export { Text } from 'troika-three-text'\n")
@@ -187,8 +191,9 @@ console.log(JSON.stringify({
   }
 
   const browserResolution = await buildRoute('browser', [])
-  assert.match(browserResolution, /node_modules\/troika-three-text\//, 'browser builds must keep upstream Troika')
-  assert.doesNotMatch(browserResolution, /native-webgl-angle\/src\//, 'browser builds must not resolve to the native facade')
+  // Either separator: the graph records the resolver's spelling of a Windows path.
+  assert.match(browserResolution, /node_modules[\\/]troika-three-text[\\/]/, 'browser builds must keep upstream Troika')
+  assert.doesNotMatch(browserResolution, /native-webgl-angle[\\/]src[\\/]/, 'browser builds must not resolve to the native facade')
 
   const nativeResolution = await buildRoute(
     'native',
@@ -197,7 +202,7 @@ console.log(JSON.stringify({
       troikaThreeTextModule: path.join(packageDir, 'src', 'troika-three-text.ts'),
     }),
   )
-  assert.equal(nativeResolution, path.join(packageDir, 'src', 'troika-three-text.ts'))
+  assert.equal(path.resolve(nativeResolution), path.join(packageDir, 'src', 'troika-three-text.ts'))
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true })
 }

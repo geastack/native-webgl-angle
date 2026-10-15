@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path, { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import plugin from '../geatsc-plugin.mjs'
-import { nativeTestOutDir } from './out-dir.mjs'
+import { executableSuffix, nativeTestOutDir } from './out-dir.mjs'
 import { createRequire } from 'node:module'
 import { compile } from '@geastack/compiler/dist/compiler.js'
 const runtimeInclude = dirname(fileURLToPath(import.meta.resolve('@geastack/compiler/src/targets/cpp/runtime/gea_runtime_builtins.cpp')))
@@ -45,7 +45,7 @@ function bindingWrapper(text) {
   return matches[0].getText(file)
 }
 
-const binary = join(nativeTestOutDir(), 'typed-void-contract-test')
+const binary = join(nativeTestOutDir(), `typed-void-contract-test${executableSuffix}`)
 for (const [label, text] of [['upstream', upstream], ['plugin-transformed', transformed]]) {
   const wrapper = bindingWrapper(text)
   assert.match(wrapper, /gl\.bindVertexArray\( vao \);/)
@@ -115,6 +115,7 @@ int main() { __gea_top_level(); assert(bindCount == 3); }
     env: { ...process.env, TMPDIR: nativeTestOutDir() },
     stdio: ['pipe', 'inherit', 'inherit'],
   })
-  assert.equal(execFileSync(binary, { encoding: 'utf8' }), 'true\ntrue\ntrue\n')
+  // Windows opens a C++ program's stdout in text mode: `\n` arrives as `\r\n`.
+  assert.equal(execFileSync(binary, { encoding: 'utf8' }).replaceAll('\r\n', '\n'), 'true\ntrue\ntrue\n')
   console.log(`${label}: direct native void calls, no boxing, nullable handles and undefined verified with ASan/UBSan`)
 }
