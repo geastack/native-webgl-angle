@@ -18,7 +18,7 @@ const codeLengthOrder = new Uint8Array([16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4,
 // native build narrows a function's integer locals to machine integers, but a
 // class's number fields stay doubles, and on a core without a double FPU (the
 // ESP32-S31) every bit read through a field was several soft-float calls --
-// inflating skytail's kit at boot took over 80 seconds.
+// inflating a game's asset kit at boot took over 80 seconds.
 
 /** Decoder state: read position, bit buffer, bits held, bytes written. */
 const position = 0
