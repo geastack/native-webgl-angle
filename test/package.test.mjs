@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { SourceTextModule, SyntheticModule, createContext } from "node:vm";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,9 +27,15 @@ with tarfile.open(sys.argv[1]) as archive:
 const manifest = JSON.parse(files["package.json"]);
 assert.equal(manifest.private, undefined);
 assert.equal(manifest.publishConfig.access, "public");
-assert.equal(manifest.dependencies["@geastack/apple"], "^0.2.14");
-assert.equal(manifest.peerDependencies["@geastack/compiler"], "^1.0.22");
-assert.equal(manifest.peerDependencies.three, "^0.185.0");
+// The archive carries the checkout's own dependency ranges.
+const source = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
+assert.deepEqual(manifest.dependencies, source.dependencies);
+assert.deepEqual(manifest.peerDependencies, source.peerDependencies);
+assert.ok(manifest.dependencies["@geastack/apple"]);
+assert.ok(manifest.peerDependencies["@geastack/compiler"]);
+assert.ok(manifest.peerDependencies.three);
 assert.equal(manifest.exports["./native/*"], "./native/*");
 for (const specification of Object.values(manifest.dependencies))
   assert.doesNotMatch(specification, /^(file|link|workspace):/);
@@ -39,7 +46,7 @@ for (const entry of Object.values(manifest.exports)) {
 for (const name of Object.keys(files)) {
   assert.match(
     name,
-    /^(src\/|native\/|test\/[a-z-]+-scene\.ts$|geatsc-plugin(?:-uploads|-uniforms|-instancing|-batched-probe)?\.mjs$|package\.json$|README\.md$|LICENSE$)/,
+    /^(src\/|native\/|test\/[a-z-]+-scene\.ts$|geatsc-plugin(?:-uploads|-uniforms|-instancing|-batched-probe|-readback)?\.mjs$|package\.json$|README\.md$|LICENSE$)/,
   );
 }
 for (const required of [
