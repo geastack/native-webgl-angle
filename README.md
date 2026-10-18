@@ -50,9 +50,36 @@ native/angle_webgl_host.mm
 
 ## Native sources in apps
 
-Gea app manifests currently accept only app-relative `nativeSources`. Until
-that resolver can consume package native sources directly, app consumers keep a
-small app-local `.mm` wrapper that includes this package's native implementation.
+Apple apps name the host in `gea.nativeSources`, either app-relative or by
+package path (`@geastack/native-webgl-angle/native/angle_webgl_host.mm`).
+
+The Windows desktop target needs nothing in the app: `gea-native.json`
+declares the host (`native/angle_webgl_host.mm` and `native/audio_host.mm`,
+compiled as C++) and `native/win32_webgl_surface.cpp`, a host extension that
+gives the program a child window filling the main window's content area,
+attaches the WebGL context to it before the program's top level runs, makes
+the context current around initialization and each frame, hands frame pacing
+to the presentation, and reports keys (as macOS virtual key codes, with a
+release held until a frame has seen the key down) and the pointer (in CSS
+pixels).
+
+The package requires a `gles` provider: an EGL and OpenGL ES 3
+implementation. The app configures it, for example
+
+```json
+"gea": { "targets": { "windows": { "providers": {
+  "gles": { "directory": "build/renderer", "files": { "egl": "GL.dll", "gles": "GL.dll" }, "runtimeFiles": ["d3d12/D3D12Core.dll"] }
+} } } }
+```
+
+or `"gles": "path/to/angle"` for a directory holding ANGLE's `libEGL.dll` and
+`libGLESv2.dll`. The build stages those files beside the executable and
+compiles their names in (`GEA_WEBGL_EGL_LIBRARY`, `GEA_WEBGL_GLES_LIBRARY`);
+the host loads them from the executable's directory. `GEA_ANGLE_EGL_DYLIB` and
+`GEA_ANGLE_GLES_DYLIB` still override the paths at run time. Without a
+provider the build stops and says so. Audio files resolve from
+`GEA_THREE_AUDIO_DIR`, else `Resources\Sounds` beside the executable, unless
+the app names a directory with `gea_three_audio_set_directory_uwp`.
 
 The bridge implementation itself lives here.
 
