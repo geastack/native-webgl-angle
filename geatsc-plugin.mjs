@@ -223,6 +223,12 @@ const hostFunctions = [
     'extern "C" double gea_three_webgl_get_shader_parameter(double shader, double pname);',
   ],
   [
+    "threeWebGLGetShaderInfoLog",
+    "gea_three_webgl_get_shader_info_log",
+    "std::string",
+    'extern "C" std::string gea_three_webgl_get_shader_info_log(double shader);',
+  ],
+  [
     "threeWebGLDeleteShader",
     "gea_three_webgl_delete_shader",
     "void",
@@ -252,6 +258,12 @@ const hostFunctions = [
     "gea_three_webgl_get_program_parameter",
     "double",
     'extern "C" double gea_three_webgl_get_program_parameter(double program, double pname);',
+  ],
+  [
+    "threeWebGLGetProgramInfoLog",
+    "gea_three_webgl_get_program_info_log",
+    "std::string",
+    'extern "C" std::string gea_three_webgl_get_program_info_log(double program);',
   ],
   [
     "threeWebGLDeleteProgram",
