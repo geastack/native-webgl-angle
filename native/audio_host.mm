@@ -21,6 +21,9 @@
 #if defined(_WIN32)
 #define _USE_MATH_DEFINES
 #include "audio_uwp.h"
+// Legacy Win16 macros are not C++ identifiers and must not leak into the runtime.
+#undef near
+#undef far
 #else
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
@@ -44,8 +47,30 @@
 
 #if defined(_WIN32)
 static std::wstring geaAudioAssetDirectory;
+static bool geaAudioAssetDirectorySet = false;
 extern "C" void gea_three_audio_set_directory_uwp(const wchar_t *path) {
   geaAudioAssetDirectory = path ? path : L"";
+  geaAudioAssetDirectorySet = true;
+}
+// Without a driver naming the directory: GEA_THREE_AUDIO_DIR, else the
+// Resources\Sounds folder beside the executable (where the desktop target
+// stages an app's sounds), matching the macOS host's bundle lookup.
+static const std::wstring &geaAudioDirectory() {
+  if (!geaAudioAssetDirectorySet) {
+    geaAudioAssetDirectorySet = true;
+    wchar_t value[MAX_PATH] = {};
+    const DWORD n = GetEnvironmentVariableW(L"GEA_THREE_AUDIO_DIR", value, MAX_PATH);
+    if (n > 0 && n < MAX_PATH) {
+      geaAudioAssetDirectory = value;
+    } else {
+      wchar_t module[MAX_PATH] = {};
+      const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
+      std::wstring directory(module, length < MAX_PATH ? length : 0);
+      const size_t slash = directory.find_last_of(L"\\/");
+      if (slash != std::wstring::npos) geaAudioAssetDirectory = directory.substr(0, slash) + L"\\Resources\\Sounds";
+    }
+  }
+  return geaAudioAssetDirectory;
 }
 #endif
 
@@ -427,7 +452,7 @@ struct GeaAudioEngine {
   long loadBufferFile(const std::string &name) {
     if (name.empty() || name.find('/') != std::string::npos || name.find("..") != std::string::npos) return 0;
 #if defined(_WIN32)
-    if (name.find('\\') != std::string::npos || geaAudioAssetDirectory.empty()) return 0;
+    if (name.find('\\') != std::string::npos || geaAudioDirectory().empty()) return 0;
     const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name.data(), static_cast<int>(name.size()), nullptr, 0);
     if (length <= 0) return 0;
     std::wstring base(static_cast<size_t>(length), L'\0');
