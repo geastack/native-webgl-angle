@@ -121,7 +121,7 @@ to change them. Any present value, including an empty string, enables them.
 
 ### Validation
 
-`npm run test:host-effects` checks 85 direct GL/input declarations and 15 audio
+`npm run test:host-effects` checks 90 direct GL/input declarations and 15 audio
 declarations against the compiler's host-mutation census. Their
 `@gea-host-inert` contracts permit native state changes while excluding script
 reference retention, script object mutation and script callbacks. The native
