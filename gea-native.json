@@ -1,0 +1,16 @@
+{
+  "$comment": "What a GeaStack native target needs in order to build this package into an app. Paths are relative to the package root.",
+  "windows": {
+    "sources": ["native/angle_webgl_host.mm", "native/audio_host.mm", "native/win32_webgl_surface.cpp"],
+    "includeDirs": ["native"],
+    "requires": {
+      "gles": {
+        "description": "an EGL and OpenGL ES 3 implementation (ANGLE's libEGL.dll and libGLESv2.dll, or one DLL exporting both)",
+        "files": {
+          "egl": { "define": "GEA_WEBGL_EGL_LIBRARY", "default": "libEGL.dll" },
+          "gles": { "define": "GEA_WEBGL_GLES_LIBRARY", "default": "libGLESv2.dll" }
+        }
+      }
+    }
+  }
+}
