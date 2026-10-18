@@ -1,4 +1,13 @@
 #include "webgl_readback.h"
+#if defined(_WIN32)
+// The EGL and OpenGL ES libraries the Windows host loads beside the executable.
+#ifndef GEA_WEBGL_EGL_LIBRARY
+#define GEA_WEBGL_EGL_LIBRARY "libEGL.dll"
+#endif
+#ifndef GEA_WEBGL_GLES_LIBRARY
+#define GEA_WEBGL_GLES_LIBRARY "libGLESv2.dll"
+#endif
+#endif
 // GEA_WEBGL_STATIC_GLES: EGL/GLES are statically linked into the program, so
 // nothing is loaded and entry points resolve through eglGetProcAddress.
 #if defined(_WIN32)
@@ -1151,22 +1160,42 @@ extern "C" bool gea_three_webgl_attach(
   gWebGL.egl = &staticGles;
   gWebGL.gles = &staticGles;
 #elif defined(_WIN32)
-  // An override (e.g. threejs-rendozer's GeaRendozerGLES.dll) first, then the
-  // packaged ANGLE of a UWP app, then a plain desktop load next to the exe.
-  auto openWin32 = [](const wchar_t *overrideEnv, const wchar_t *name) -> HMODULE {
+  // An override path from the environment first, then the packaged library of
+  // a UWP app, then the file beside the executable. The file names default to
+  // ANGLE's; a build that stages another EGL/GLES implementation names its
+  // files through GEA_WEBGL_EGL_LIBRARY / GEA_WEBGL_GLES_LIBRARY (paths
+  // relative to the executable's directory; one DLL may implement both).
+  auto openWin32 = [](const wchar_t *overrideEnv, const char *name) -> HMODULE {
     wchar_t overridePath[MAX_PATH];
     const DWORD n = GetEnvironmentVariableW(overrideEnv, overridePath, MAX_PATH);
     if (n > 0 && n < MAX_PATH) {
       if (HMODULE m = LoadLibraryW(overridePath)) return m;
+      smokeLog("[native-webgl-angle] %ls names a library that does not load (error %lu)", overrideEnv, GetLastError());
     }
+    std::wstring file;
+    for (const char *c = name; *c; ++c) file.push_back(*c == '/' ? L'\\' : static_cast<wchar_t>(static_cast<unsigned char>(*c)));
 #if defined(WINAPI_FAMILY) && WINAPI_FAMILY == WINAPI_FAMILY_APP
-    return LoadPackagedLibrary(name, 0);
+    return LoadPackagedLibrary(file.c_str(), 0);
 #else
-    return LoadLibraryW(name);
+    wchar_t module[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, module, MAX_PATH);
+    std::wstring beside(module, length < MAX_PATH ? length : 0);
+    const size_t slash = beside.find_last_of(L"\\/");
+    if (slash != std::wstring::npos) {
+      beside.resize(slash + 1);
+      beside += file;
+      // Altered search path: the library's own dependencies resolve from its directory.
+      if (HMODULE m = LoadLibraryExW(beside.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH)) return m;
+    }
+    return LoadLibraryW(file.c_str());
 #endif
   };
-  gWebGL.egl = openWin32(L"GEA_ANGLE_EGL_DYLIB", L"libEGL.dll");
-  gWebGL.gles = openWin32(L"GEA_ANGLE_GLES_DYLIB", L"libGLESv2.dll");
+  gWebGL.egl = openWin32(L"GEA_ANGLE_EGL_DYLIB", GEA_WEBGL_EGL_LIBRARY);
+  gWebGL.gles = openWin32(L"GEA_ANGLE_GLES_DYLIB", GEA_WEBGL_GLES_LIBRARY);
+  if (!gWebGL.egl || !gWebGL.gles) {
+    smokeLog("[native-webgl-angle] EGL/GLES implementation not found: %s and %s beside the executable "
+             "(GEA_ANGLE_EGL_DYLIB / GEA_ANGLE_GLES_DYLIB override them)", GEA_WEBGL_EGL_LIBRARY, GEA_WEBGL_GLES_LIBRARY);
+  }
 #elif defined(__APPLE__)
   static const char *const eglPaths[] = {
     "/Applications/Visual Studio Code.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
