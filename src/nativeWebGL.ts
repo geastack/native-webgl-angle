@@ -59,7 +59,9 @@ import {
   nativeWebGLGetError,
   nativeWebGLGetActiveAttribInfo,
   nativeWebGLGetActiveUniformInfo,
+  nativeWebGLGetProgramInfoLog,
   nativeWebGLGetProgramParameter,
+  nativeWebGLGetShaderInfoLog,
   nativeWebGLGetShaderParameter,
   nativeWebGLGetUniformLocation,
   nativeWebGLHeight,
@@ -1036,7 +1038,7 @@ export class NativeWebGL2RenderingContext {
     if (pname === this.DELETE_STATUS) return false
     return nativeWebGLGetShaderParameter(nativeHandle(shader), pname) !== 0
   }
-  getShaderInfoLog(_shader: NativeHandle | null): string { return '' }
+  getShaderInfoLog(shader: NativeShader): string { return nativeWebGLGetShaderInfoLog(nativeHandle(shader)) }
   getShaderSource(shader: NativeShader): string { return shaderSourceFor(shader) }
   deleteShader(shader: NativeShader | null): void { if (shader) { shaderSourceByHandle.delete(nativeHandle(shader)); nativeWebGLDeleteShader(nativeHandle(shader)) } }
 
@@ -1065,7 +1067,7 @@ export class NativeWebGL2RenderingContext {
     if (pname === this.VALIDATE_STATUS) return true
     return nativeWebGLGetProgramParameter(nativeHandle(program), pname) !== 0
   }
-  getProgramInfoLog(_program: NativeProgram | null): string { return '' }
+  getProgramInfoLog(program: NativeProgram): string { return nativeWebGLGetProgramInfoLog(nativeHandle(program)) }
   deleteProgram(program: NativeProgram | null): void { if (program) { nativeWebGLDeleteProgram(nativeHandle(program)) } }
   validateProgram(_program: NativeProgram): void {}
   getAttachedShaders(program: NativeProgram): NativeShader[] { return program.shaders }
