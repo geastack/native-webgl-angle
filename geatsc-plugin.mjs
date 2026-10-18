@@ -2264,6 +2264,15 @@ class WebGLRenderer {
       rendererCompileReturnSource,
       nativeRendererCompileReturnSource,
     );
+    // `if ( targetScene === null ) targetScene = scene;` stores the Object3D
+    // being compiled; every use after it is an Object3D use.
+    transformed = replaceOne(
+      transformed,
+      `@param {?Scene} [targetScene=null] - The target scene.\n\t\t * ${nativeRendererCompileReturnSource}`,
+      `@param {?Object3D} [targetScene=null] - The target scene.\n\t\t * ${nativeRendererCompileReturnSource}`,
+      fileName,
+      "WebGLRenderer compile target root",
+    );
     transformed = transformed.replace(
       rendererCompileAssignmentSource,
       nativeRendererCompileAssignmentSource,
@@ -5717,7 +5726,7 @@ function requireWebGLStateTextureImageSource( value ) {
     transformed = replaceOne(
       transformed,
       "\tfunction get( scene, renderCallDepth ) {",
-      "\t/** @param {import('../../scenes/Scene.js').Scene} scene @param {number} renderCallDepth */\n\tfunction get( scene, renderCallDepth ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene @param {number} renderCallDepth */\n\tfunction get( scene, renderCallDepth ) {",
       fileName,
       "WebGLRenderLists lookup inputs",
     );
@@ -6449,7 +6458,10 @@ function WebGLShadowMap( renderer, objects, capabilities ) {`,
     transformed = replaceOne(
       transformed,
       "this.render = function ( lights, scene, camera ) {",
-      "this.render = /** @this {WebGLShadowMap} @param {Array<import('../../lights/Light.js').Light>} lights */ function ( lights, scene, camera ) {",
+      // `scene` is the root WebGLRenderer.render was handed, any Object3D;
+      // the body only traverses it. This inline block outranks the
+      // declaration overlay's `@param {Scene} scene` above the assignment.
+      "this.render = /** @this {WebGLShadowMap} @param {Array<import('../../lights/Light.js').Light>} lights @param {import('../../core/Object3D.js').Object3D} scene */ function ( lights, scene, camera ) {",
       fileName,
       "WebGLShadowMap.render receiver",
     );
@@ -6817,21 +6829,21 @@ class WebGLBackgroundPlaneMaterial extends ShaderMaterial {
     transformed = replaceOne(
       transformed,
       "\tfunction getBackground( scene ) {",
-      "\t/** @param {Scene} scene */\n\tfunction getBackground( scene ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene */\n\tfunction getBackground( scene ) {",
       fileName,
       "WebGLBackground background scene input",
     );
     transformed = replaceOne(
       transformed,
       "\tfunction render( scene ) {",
-      "\t/** @param {Scene} scene */\n\tfunction render( scene ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene */\n\tfunction render( scene ) {",
       fileName,
       "WebGLBackground scene input",
     );
     transformed = replaceOne(
       transformed,
       "\tfunction addToRenderList( renderList, scene ) {",
-      "\t/** @param {Scene} scene */\n\tfunction addToRenderList( renderList, scene ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene */\n\tfunction addToRenderList( renderList, scene ) {",
       fileName,
       "WebGLBackground render-list scene input",
     );
@@ -7168,6 +7180,15 @@ class WebGLBackgroundPlaneMaterial extends ShaderMaterial {
       backgroundRotation: "uniformMatrix3",
       uvTransform: "uniformMatrix3",
     });
+    // The renderer renders any Object3D (WebGLRenderer.render states
+    // `@param {Object3D} scene`), so the scene inputs above state Object3D.
+    // Only a Scene has a background: each read sits behind
+    // `scene.isScene === true`, or behind a background only a Scene yields,
+    // and names the Scene it reads.
+    transformed = transformed.replaceAll(
+      "scene.background",
+      "/** @type {Scene} */ ( scene ).background",
+    );
   }
   if (normalized.endsWith("/three/src/renderers/shaders/UniformsLib.js")) {
     transformed = transformUniformsLib(transformed, fileName, replaceOne);
@@ -9308,7 +9329,7 @@ function WebGLRenderState( extensions ) {`,
     transformed = replaceOne(
       transformed,
       "\tfunction get( scene, renderCallDepth = 0 ) {",
-      "\t/** @param {import('../../scenes/Scene.js').Scene} scene @param {number} [renderCallDepth=0] */\n\tfunction get( scene, renderCallDepth = 0 ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene @param {number} [renderCallDepth=0] */\n\tfunction get( scene, renderCallDepth = 0 ) {",
       fileName,
       "WebGLRenderStates lookup inputs",
     );
