@@ -1,8 +1,14 @@
 // The host owns the physical upload format. The compiler only preserves the
 // native carriers at these explicitly registered synchronous boundaries.
-// Element type of the client pixels, by GL type: half floats travel as their
-// 16-bit patterns, never widened to float32.
-const pixelKind = '(type == 0x1403 || type == 0x140B || type == 0x8D61 ? 2 : type == 0x1405 ? 3 : type == 0x1401 ? 4 : type == 0x1400 ? 5 : type == 0x1402 ? 6 : type == 0x1404 ? 7 : 1)';
+// Element type of the client pixels, by GL type: a texture upload hands GL the
+// view's own bytes, and the GL type names the view (WebGL 2 3.7.6,
+// OES_texture_half_float). UNSIGNED_SHORT, HALF_FLOAT and the packed 16-bit
+// types read a Uint16Array (half floats travel as their 16-bit patterns, never
+// widened to float32); UNSIGNED_INT and the packed 32-bit types a Uint32Array;
+// BYTE, SHORT and INT their signed views; FLOAT a Float32Array.
+const pixelKind = '(type == 0x1401 ? 4 : type == 0x1400 ? 5 : type == 0x1402 ? 6 : type == 0x1404 ? 7 : ' +
+  'type == 0x1403 || type == 0x140B || type == 0x8D61 || type == 0x8033 || type == 0x8034 || type == 0x8363 ? 2 : ' +
+  'type == 0x1405 || type == 0x8368 || type == 0x8C3B || type == 0x8C3E || type == 0x84FA ? 3 : 1)';
 export const nativeUploadFunctions = [
   ['threeWebGLBufferData', 'gea_three_webgl_buffer_data_native', ['target', 'usage', 'typeCode'], 'gea_three_webgl_buffer_data_bytes', ['target', 'usage'], 'typeCode'],
   ['threeWebGLBufferSubData', 'gea_three_webgl_buffer_sub_data_native', ['target', 'offset', 'typeCode'], 'gea_three_webgl_buffer_sub_data_bytes', ['target', 'offset'], 'typeCode'],
