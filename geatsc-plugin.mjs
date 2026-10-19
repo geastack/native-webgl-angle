@@ -8148,6 +8148,11 @@ ${indent}}`,
       fileName,
       "WebGLBindingStates attribute-set stamp fields",
     );
+    // The fast paths below test `object instanceof InstancedMesh`, a name
+    // three's WebGLBindingStates never imports: unbound, it reads a dynamic
+    // global, and an app that never constructs an InstancedMesh has no
+    // binding for it at all.
+    transformed = `import { InstancedMesh } from '../../objects/InstancedMesh.js';\n${transformed}`;
     transformed = replaceOne(
       transformed,
       "\tfunction needsUpdate( object, geometry, program, index ) {\n",
