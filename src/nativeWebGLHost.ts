@@ -35,6 +35,16 @@ export function nativeWebGLSwap(): void {
   threeWebGLSwap()
 }
 
+/**
+ * Vertical sync from the next frame on. Off presents at once, so the frame rate shows what
+ * a frame costs. On paces presents to the display: interval 1 where nothing else paces the
+ * frames (a desktop window with no display link), the host's own pacing on Apple platforms,
+ * where a second waiter would only make frames miss refreshes.
+ */
+export function nativeWebGLSetVsync(on: boolean): void {
+  threeWebGLSetVsync(on ? 1 : 0)
+}
+
 // GPU time-elapsed timers (GL_EXT_disjoint_timer_query): begin returns a timer id (0 when
 // unsupported), end closes the open timer, and result is the elapsed nanoseconds, or -1 while the
 // GPU has not finished it. A timer is released once its result has been read.
@@ -88,12 +98,14 @@ export function nativeWebGLCreateShader(type: number): number { return threeWebG
 export function nativeWebGLShaderSource(shader: number, source: string): void { threeWebGLShaderSource(shader, source) }
 export function nativeWebGLCompileShader(shader: number): void { threeWebGLCompileShader(shader) }
 export function nativeWebGLGetShaderParameter(shader: number, pname: number): number { return threeWebGLGetShaderParameter(shader, pname) }
+export function nativeWebGLGetShaderInfoLog(shader: number): string { return threeWebGLGetShaderInfoLog(shader) }
 export function nativeWebGLDeleteShader(shader: number): void { threeWebGLDeleteShader(shader) }
 
 export function nativeWebGLCreateProgram(): number { return threeWebGLCreateProgram() }
 export function nativeWebGLAttachShader(program: number, shader: number): void { threeWebGLAttachShader(program, shader) }
 export function nativeWebGLLinkProgram(program: number): void { threeWebGLLinkProgram(program) }
 export function nativeWebGLGetProgramParameter(program: number, pname: number): number { return threeWebGLGetProgramParameter(program, pname) }
+export function nativeWebGLGetProgramInfoLog(program: number): string { return threeWebGLGetProgramInfoLog(program) }
 export function nativeWebGLDeleteProgram(program: number): void { threeWebGLDeleteProgram(program) }
 export function nativeWebGLUseProgram(program: number): void { threeWebGLUseProgram(program) }
 export function nativeWebGLGetAttribLocation(program: number, name: string): number { return threeWebGLGetAttribLocation(program, name) }
@@ -187,6 +199,8 @@ declare function threeWebGLDevicePixelRatio(): number
 /** Lifecycle entry: presents the native surface and may run platform hooks; not an inert call. */
 declare function threeWebGLSwap(): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLSetVsync(on: number): void
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeAngleSmokeLog(message: string): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeKeyPressed(code: number): boolean
@@ -207,6 +221,8 @@ declare function threeWebGLCompileShader(shader: number): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLGetShaderParameter(shader: number, pname: number): number
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLGetShaderInfoLog(shader: number): string
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLDeleteShader(shader: number): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLCreateProgram(): number
@@ -216,6 +232,8 @@ declare function threeWebGLAttachShader(program: number, shader: number): void
 declare function threeWebGLLinkProgram(program: number): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLGetProgramParameter(program: number, pname: number): number
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLGetProgramInfoLog(program: number): string
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLDeleteProgram(program: number): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */

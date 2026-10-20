@@ -21,8 +21,37 @@ extern "C" void gea_three_webgl_buffer_sub_data_bytes(double, double offset, con
   receivedOffset = offset;
   gea_three_webgl_buffer_data_bytes(0,0,data,size);
 }
+extern "C" void gea_three_webgl_tex_image_2d_bytes(double, double, double, double, double, double, double, const void* data, double size) {
+  gea_three_webgl_buffer_data_bytes(0,0,data,size);
+}
+extern "C" void gea_three_webgl_tex_sub_image_2d_bytes(double, double, double, double, double, double, double, double, const void* data, double size) {
+  gea_three_webgl_buffer_data_bytes(0,0,data,size);
+}
 ${nativeUploadFunctions.map(row => row[3]).join('\n')}
+// WebGL uploads a texture view's own bytes, and the GL type names the view
+// (WebGL 2 3.7.6): HALF_FLOAT data is Uint16Array bit patterns, as in three's
+// DFG LUT, and must not be widened to float.
+template <typename T> static void assertTextureBytes(double type, std::initializer_list<T> values) {
+  auto pixels = gea::makeRef<gea::TypedArray<T>>(values.size());
+  unsigned i = 0;
+  for (T value : values) pixels->setElement(i++, value);
+  const double size = static_cast<double>(values.size() * sizeof(T));
+  gea_three_webgl_tex_image_2d_native(0, 0, 0, 1, 1, 0, type, pixels);
+  assert(receivedSize == size && std::memcmp(received.data(), pixels->data(), values.size() * sizeof(T)) == 0);
+  receivedSize = -1;
+  gea_three_webgl_tex_sub_image_2d_native(0, 0, 0, 0, 1, 1, 0, type, pixels);
+  assert(receivedSize == size && std::memcmp(received.data(), pixels->data(), values.size() * sizeof(T)) == 0);
+}
 int main() {
+  assertTextureBytes<std::uint8_t>(0x1401, {255, 1});
+  assertTextureBytes<std::int8_t>(0x1400, {-1, -128});
+  for (double type : {0x1403, 0x140B, 0x8D61, 0x8033, 0x8034, 0x8363})
+    assertTextureBytes<std::uint16_t>(type, {0x30b5, 0x7bff});
+  assertTextureBytes<std::int16_t>(0x1402, {-1, -32768});
+  for (double type : {0x1405, 0x8368, 0x8C3B, 0x8C3E, 0x84FA})
+    assertTextureBytes<std::uint32_t>(type, {0xffffffffu, 0x80000001u});
+  assertTextureBytes<std::int32_t>(0x1404, {-1, -2147483647});
+  assertTextureBytes<float>(0x1406, {0.1f, -2.5f});
   auto words = gea::makeRef<gea::TypedArray<std::uint16_t>>(4);
   for (unsigned i = 0; i < 4; ++i) words->setElement(i, 65000 + i);
   gea_three_webgl_buffer_sub_data_range_native(0, 12, 2, words, 1, 2);

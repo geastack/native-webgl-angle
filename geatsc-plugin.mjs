@@ -97,6 +97,14 @@ const hostFunctions = [
   ],
   ...nativeUploadFunctions,
   ...nativeReadbackFunctions,
+  // Resources files (native/resource_host.mm): read whole, in place, into the caller's Uint8Array.
+  ['threeResourceSize','gea_three_resource_size','double','extern "C" double gea_three_resource_size(std::string name);'],
+  ['threeResourceRead','gea_three_resource_read_native','double',`
+extern "C" double gea_three_resource_read_bytes(std::string name, void* bytes, double byteLength);
+inline double gea_three_resource_read_native(std::string name, const gea::Ref<gea::TypedArray<std::uint8_t>>& destination) {
+  if (!destination) return -1;
+  return gea_three_resource_read_bytes(std::move(name), destination->data(), static_cast<double>(destination->size()));
+}`],
   ['threeWebGLBlitFramebuffer','gea_three_webgl_blit_framebuffer','void','extern "C" void gea_three_webgl_blit_framebuffer(double,double,double,double,double,double,double,double,double,double);'],
   ['threeWebGLReadPixelsPack','gea_three_webgl_read_pixels_pack','void','extern "C" void gea_three_webgl_read_pixels_pack(double,double,double,double,double,double,double);'],
   ['threeWebGLFenceSync','gea_three_webgl_fence_sync','double','extern "C" double gea_three_webgl_fence_sync();'],
@@ -147,6 +155,12 @@ const hostFunctions = [
     "gea_three_webgl_swap",
     "void",
     'extern "C" void gea_three_webgl_swap();',
+  ],
+  [
+    "threeWebGLSetVsync",
+    "gea_three_webgl_set_vsync",
+    "void",
+    'extern "C" void gea_three_webgl_set_vsync(double on);',
   ],
   [
     "threeAngleSmokeLog",
@@ -223,6 +237,12 @@ const hostFunctions = [
     'extern "C" double gea_three_webgl_get_shader_parameter(double shader, double pname);',
   ],
   [
+    "threeWebGLGetShaderInfoLog",
+    "gea_three_webgl_get_shader_info_log",
+    "std::string",
+    'extern "C" std::string gea_three_webgl_get_shader_info_log(double shader);',
+  ],
+  [
     "threeWebGLDeleteShader",
     "gea_three_webgl_delete_shader",
     "void",
@@ -252,6 +272,12 @@ const hostFunctions = [
     "gea_three_webgl_get_program_parameter",
     "double",
     'extern "C" double gea_three_webgl_get_program_parameter(double program, double pname);',
+  ],
+  [
+    "threeWebGLGetProgramInfoLog",
+    "gea_three_webgl_get_program_info_log",
+    "std::string",
+    'extern "C" std::string gea_three_webgl_get_program_info_log(double program);',
   ],
   [
     "threeWebGLDeleteProgram",
@@ -1698,6 +1724,12 @@ const nativeDataTextureOverlayUnpackAlignmentSource =
   "\t/** @type {number} */\n\tunpackAlignment;";
 const overlayToJSONParameterSource =
   /(\/\*\*\n\t \* @param )\{[^\n]+\}( \[meta\]\n\t \*\/\n\ttoJSON\( meta \) \{)/g;
+const nativeObject3DJSONType =
+  "{ metadata?: { version: number, type: string, generator: string }, geometries?: Array<Object>, materials?: Array<Object>, textures?: Array<Object>, images?: Array<Object>, shapes?: Array<Object>, skeletons?: Array<Object>, animations?: Array<Object>, nodes?: Array<Object>, object: Object }";
+const nativeBufferGeometryJSONType =
+  "{ metadata: { version: number, type: string, generator: string }, uuid?: string, type?: string, name?: string, userData?: Object, data?: Object, instanceCount?: number, isInstancedBufferGeometry?: boolean, [key: string]: any }";
+const nativeFogJSONType =
+  "{ type: string, name: string, color: number, near?: number, far?: number, density?: number }";
 const rendererReceiverMethods = [
   "setPixelRatio",
   "setSize",
@@ -2032,6 +2064,37 @@ const transformSource = ({ fileName, text }) => {
       object3DRaycastSource,
       nativeObject3DRaycastSource,
     );
+    // `JSON.stringify` on a declared-any value keeps every class's `toJSON`
+    // (three's own `copy()` deep-copies `userData` that way), so these bodies
+    // compile whenever a material or texture is cloned. `@return {Object}`
+    // states nothing, so every `super.toJSON( meta )`, `child.toJSON( meta )`
+    // and `camera.toJSON( false )` result boxed and then had to be read back
+    // as the record the body builds, which no conversion can do. The envelope
+    // is the record the body builds; `object` stays `Object` because each
+    // subclass adds its own fields to it (`data.object.fov = ...`).
+    transformed = replaceOne(
+      transformed,
+      "\t * @return {Object} A JSON object representing the serialized 3D object.",
+      `\t * @return {${nativeObject3DJSONType}} A JSON object representing the serialized 3D object.`,
+      fileName,
+      "Object3D.toJSON envelope",
+    );
+  }
+  if (
+    normalized.endsWith("/three/src/scenes/Fog.js") ||
+    normalized.endsWith("/three/src/scenes/FogExp2.js")
+  ) {
+    // `Scene.toJSON` calls `toJSON` on `?(Fog|FogExp2)`. Each body's own
+    // literal made the two methods two function types, and the read over the
+    // union had to convert one into the other. One record both literals fit,
+    // spelled once, makes them one type.
+    transformed = replaceOne(
+      transformed,
+      "\t * @return {Object} A JSON object representing the serialized fog",
+      `\t * @return {${nativeFogJSONType}} A JSON object representing the serialized fog`,
+      fileName,
+      "Fog toJSON shared record",
+    );
   }
   if (normalized.endsWith("/three/src/renderers/WebGLRenderer.js")) {
     transformed =
@@ -2214,6 +2277,15 @@ class WebGLRenderer {
     transformed = transformed.replace(
       rendererCompileReturnSource,
       nativeRendererCompileReturnSource,
+    );
+    // `if ( targetScene === null ) targetScene = scene;` stores the Object3D
+    // being compiled; every use after it is an Object3D use.
+    transformed = replaceOne(
+      transformed,
+      `@param {?Scene} [targetScene=null] - The target scene.\n\t\t * ${nativeRendererCompileReturnSource}`,
+      `@param {?Object3D} [targetScene=null] - The target scene.\n\t\t * ${nativeRendererCompileReturnSource}`,
+      fileName,
+      "WebGLRenderer compile target root",
     );
     transformed = transformed.replace(
       rendererCompileAssignmentSource,
@@ -3717,6 +3789,33 @@ class BufferGeometry extends EventDispatcher {`,
       "\t\t * @type {Record<string, Array<import('./BufferAttribute.js').BufferAttribute|import('./InterleavedBufferAttribute.js').InterleavedBufferAttribute>|undefined>}\n\t\t */\n\t\tthis.morphAttributes = {};",
       fileName,
       "BufferGeometry morph-attribute table",
+    );
+    // `toJSON` fills each morph entry from `const array = []`, which the
+    // checker types `any[]` (the table's entry type) while the census lays it
+    // out from its pushes, the union of the two attribute `toJSON` records.
+    // Two carriers for one array, and an array cannot be converted in place.
+    // State the element three's attribute `toJSON`s state: `Object`.
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tconst attributeArray = this.morphAttributes[ key ];\n\n\t\t\tconst array = [];",
+      "\t\t\tconst attributeArray = this.morphAttributes[ key ];\n\n\t\t\t/** @type {Array<Object>} */\n\t\t\tconst array = [];",
+      fileName,
+      "BufferGeometry.toJSON morph entry array",
+    );
+    // `JSON.stringify` on a declared-any value keeps every `toJSON` (see
+    // Object3D's envelope), so this envelope is published to dynamic code,
+    // which may write any of its fields. Laid out from the body, its `data`
+    // field is the record `data.data = { attributes: {} }` and the writes
+    // after it build, and a dynamic value has no reader into that record.
+    // State the envelope, with `data` left `Object` as Object3D's `object`
+    // is: the body fills it key by key. The index signature is the
+    // parameters branch, which copies each parameter in by name.
+    transformed = replaceOne(
+      transformed,
+      "\t * @return {Object} A JSON object representing the serialized geometry.\n\t */\n\ttoJSON() {\n\n\t\tconst data = {",
+      `\t * @return {${nativeBufferGeometryJSONType}} A JSON object representing the serialized geometry.\n\t */\n\ttoJSON() {\n\n\t\t/** @type {${nativeBufferGeometryJSONType}} */\n\t\tconst data = {`,
+      fileName,
+      "BufferGeometry.toJSON envelope",
     );
     transformed = replaceOne(
       transformed,
@@ -5455,6 +5554,18 @@ function requireWebGLStateTextureImageSource( value ) {
       fileName,
       "WebGLBindingStates interleaved attribute import",
     );
+    // The binding-state fast paths below test `object instanceof InstancedMesh`; three's own
+    // file reads `object.isInstancedMesh` and imports no InstancedMesh. An app that patches
+    // three on disk may have added the import already.
+    if (!transformed.includes("import { InstancedMesh } from '../../objects/InstancedMesh.js';")) {
+      transformed = replaceOne(
+        transformed,
+        "import { IntType } from '../../constants.js';",
+        "import { IntType } from '../../constants.js';\nimport { InstancedMesh } from '../../objects/InstancedMesh.js';",
+        fileName,
+        "WebGLBindingStates instanced mesh import",
+      );
+    }
     transformed = replaceOne(
       transformed,
       "\t\t\tif ( index !== null ) {\n\n\t\t\t\tgl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, attributes.get( index ).buffer );",
@@ -5641,7 +5752,7 @@ function requireWebGLStateTextureImageSource( value ) {
     transformed = replaceOne(
       transformed,
       "\tfunction get( scene, renderCallDepth ) {",
-      "\t/** @param {import('../../scenes/Scene.js').Scene} scene @param {number} renderCallDepth */\n\tfunction get( scene, renderCallDepth ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene @param {number} renderCallDepth */\n\tfunction get( scene, renderCallDepth ) {",
       fileName,
       "WebGLRenderLists lookup inputs",
     );
@@ -6373,7 +6484,10 @@ function WebGLShadowMap( renderer, objects, capabilities ) {`,
     transformed = replaceOne(
       transformed,
       "this.render = function ( lights, scene, camera ) {",
-      "this.render = /** @this {WebGLShadowMap} @param {Array<import('../../lights/Light.js').Light>} lights */ function ( lights, scene, camera ) {",
+      // `scene` is the root WebGLRenderer.render was handed, any Object3D;
+      // the body only traverses it. This inline block outranks the
+      // declaration overlay's `@param {Scene} scene` above the assignment.
+      "this.render = /** @this {WebGLShadowMap} @param {Array<import('../../lights/Light.js').Light>} lights @param {import('../../core/Object3D.js').Object3D} scene */ function ( lights, scene, camera ) {",
       fileName,
       "WebGLShadowMap.render receiver",
     );
@@ -6741,21 +6855,21 @@ class WebGLBackgroundPlaneMaterial extends ShaderMaterial {
     transformed = replaceOne(
       transformed,
       "\tfunction getBackground( scene ) {",
-      "\t/** @param {Scene} scene */\n\tfunction getBackground( scene ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene */\n\tfunction getBackground( scene ) {",
       fileName,
       "WebGLBackground background scene input",
     );
     transformed = replaceOne(
       transformed,
       "\tfunction render( scene ) {",
-      "\t/** @param {Scene} scene */\n\tfunction render( scene ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene */\n\tfunction render( scene ) {",
       fileName,
       "WebGLBackground scene input",
     );
     transformed = replaceOne(
       transformed,
       "\tfunction addToRenderList( renderList, scene ) {",
-      "\t/** @param {Scene} scene */\n\tfunction addToRenderList( renderList, scene ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene */\n\tfunction addToRenderList( renderList, scene ) {",
       fileName,
       "WebGLBackground render-list scene input",
     );
@@ -7092,6 +7206,15 @@ class WebGLBackgroundPlaneMaterial extends ShaderMaterial {
       backgroundRotation: "uniformMatrix3",
       uvTransform: "uniformMatrix3",
     });
+    // The renderer renders any Object3D (WebGLRenderer.render states
+    // `@param {Object3D} scene`), so the scene inputs above state Object3D.
+    // Only a Scene has a background: each read sits behind
+    // `scene.isScene === true`, or behind a background only a Scene yields,
+    // and names the Scene it reads.
+    transformed = transformed.replaceAll(
+      "scene.background",
+      "/** @type {Scene} */ ( scene ).background",
+    );
   }
   if (normalized.endsWith("/three/src/renderers/shaders/UniformsLib.js")) {
     transformed = transformUniformsLib(transformed, fileName, replaceOne);
@@ -8511,17 +8634,6 @@ function WebGLProperties() {
 
 \t}
 
-\t/**
-\t * @param {WebGLPropertyOwner} object
-\t * @param {keyof NativeWebGLPropertyBag} key
-\t * @param {NativeWebGLPropertyBag[keyof NativeWebGLPropertyBag]} value
-\t */
-\tfunction update( object, key, value ) {
-
-\t\tget( object )[ key ] = value;
-
-\t}
-
 \tfunction dispose() {
 
 \t\tmaterials.clear();
@@ -8533,7 +8645,12 @@ function WebGLProperties() {
 
 \t}
 
-\treturn { has, get, remove, update, dispose };
+\t// Three's \`update( object, key, value )\` is left out: nothing in three
+\t// calls it, and its \`get( object )[ key ] = value\` stores a union of every
+\t// slot's type into the one slot \`key\` names. TypeScript rejects that store
+\t// (the target is \`never\`), and geatsc certifies no conversion from the
+\t// union into a single slot, so the C++ emitter refused the body.
+\treturn { has, get, remove, dispose };
 
 }
 
@@ -9238,7 +9355,7 @@ function WebGLRenderState( extensions ) {`,
     transformed = replaceOne(
       transformed,
       "\tfunction get( scene, renderCallDepth = 0 ) {",
-      "\t/** @param {import('../../scenes/Scene.js').Scene} scene @param {number} [renderCallDepth=0] */\n\tfunction get( scene, renderCallDepth = 0 ) {",
+      "\t/** @param {import('../../core/Object3D.js').Object3D} scene @param {number} [renderCallDepth=0] */\n\tfunction get( scene, renderCallDepth = 0 ) {",
       fileName,
       "WebGLRenderStates lookup inputs",
     );
