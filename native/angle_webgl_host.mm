@@ -328,6 +328,7 @@ static constexpr GLenum GL_UNSIGNED_INT = 0x1405;
 static constexpr GLenum GL_RGBA_VALUE = 0x1908;
 static constexpr GLenum GL_VIEWPORT_VALUE = 0x0BA2;
 static constexpr GLenum GL_FRAMEBUFFER_BINDING_VALUE = 0x8CA6;
+static constexpr GLenum GL_INFO_LOG_LENGTH_VALUE = 0x8B84;
 
 using PFNEGLGETPROCADDRESS = void *(*)(const char *);
 using PFNEGLGETPLATFORMDISPLAYEXTPROC = EGLDisplay (*)(EGLenum, void *, const EGLint *);
@@ -402,6 +403,7 @@ using PFNGLGETINTEGERVPROC = void (*)(GLenum, GLint *);
 using PFNGLGETPROGRAMIVPROC = void (*)(GLuint, GLenum, GLint *);
 using PFNGLGETSHADERIVPROC = void (*)(GLuint, GLenum, GLint *);
 using PFNGLGETSHADERINFOLOGPROC = void (*)(GLuint, GLsizei, GLsizei *, GLchar *);
+using PFNGLGETPROGRAMINFOLOGPROC = void (*)(GLuint, GLsizei, GLsizei *, GLchar *);
 using PFNGLGETSTRINGPROC = const unsigned char *(*)(GLenum);
 using PFNGLGETUNIFORMLOCATIONPROC = GLint (*)(GLuint, const GLchar *);
 using PFNGLLINEWIDTHPROC = void (*)(GLfloat);
@@ -549,6 +551,7 @@ struct AngleWebGLState {
   PFNGLGETPROGRAMIVPROC glGetProgramiv = nullptr;
   PFNGLGETSHADERIVPROC glGetShaderiv = nullptr;
   PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog = nullptr;
+  PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog = nullptr;
   PFNGLGETSTRINGPROC glGetString = nullptr;
   PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
   PFNGLLINEWIDTHPROC glLineWidth = nullptr;
@@ -627,6 +630,10 @@ struct AngleWebGLState {
 };
 
 static AngleWebGLState gWebGL;
+// Vertical sync as the program chose it (nativeWebGLSetVsync): 1 on, 0 off, -1 not chosen
+// (then GEA_ANGLE_SWAP_INTERVAL, else 0; see makeCurrent).
+static int gVsyncChoice = -1;
+extern "C" void gea_three_webgl_set_vsync(double on) { gVsyncChoice = on != 0 ? 1 : 0; }
 static GLenum hostReadbackError = 0;
 static std::chrono::steady_clock::time_point gProfileSizeSync;
 static bool gProfileSizeSyncPending = false;
@@ -942,9 +949,19 @@ static bool makeCurrent(const char *label) {
   // reintroduced because the layer still syncs its own present.
   // `GEA_ANGLE_SWAP_INTERVAL` overrides it (set `1` to restore the old
   // double-paced behaviour) so both arms can be measured from one binary.
+  // A program's choice (nativeWebGLSetVsync) wins: off is interval 0; on is
+  // interval 1 where nothing else paces the frames (a desktop window with no
+  // display link), and the default above on Apple platforms, where the display
+  // link and the layer's own sync already do.
   if (gWebGL.eglSwapInterval) {
     const char *requested = std::getenv("GEA_ANGLE_SWAP_INTERVAL");
-    const EGLint interval = requested ? static_cast<EGLint>(std::atoi(requested)) : 0;
+    const EGLint fallback = requested ? static_cast<EGLint>(std::atoi(requested)) : 0;
+#if defined(__APPLE__)
+    const EGLint paced = fallback;
+#else
+    const EGLint paced = 1;
+#endif
+    const EGLint interval = gVsyncChoice == 0 ? 0 : gVsyncChoice == 1 ? paced : fallback;
     gWebGL.eglSwapInterval(gWebGL.display, interval);
   }
   if (gWebGL.eglMakeCurrent(gWebGL.display, gWebGL.surface, gWebGL.surface, gWebGL.context) == EGL_FALSE_VALUE) {
@@ -1069,6 +1086,7 @@ static bool loadGlSymbols() {
   LOAD_GL(glGetProgramiv, PFNGLGETPROGRAMIVPROC)
   LOAD_GL(glGetShaderiv, PFNGLGETSHADERIVPROC)
   LOAD_GL(glGetShaderInfoLog, PFNGLGETSHADERINFOLOGPROC)
+  LOAD_GL(glGetProgramInfoLog, PFNGLGETPROGRAMINFOLOGPROC)
   LOAD_GL(glGetString, PFNGLGETSTRINGPROC)
   LOAD_GL(glGetUniformLocation, PFNGLGETUNIFORMLOCATIONPROC)
   LOAD_GL(glLineWidth, PFNGLLINEWIDTHPROC)
@@ -2045,6 +2063,28 @@ extern "C" double gea_three_webgl_get_program_parameter(double program, double p
   GLint value = 0;
   gWebGL.glGetProgramiv(asGLuint(program), asGLenum(pname), &value);
   return value;
+}
+// The driver's compile or link log, as WebGL's getShaderInfoLog and
+// getProgramInfoLog return it.
+static std::string geaInfoLog(double object, PFNGLGETSHADERIVPROC queryLength, PFNGLGETSHADERINFOLOGPROC readLog) {
+  GLint length = 0;
+  queryLength(asGLuint(object), GL_INFO_LOG_LENGTH_VALUE, &length);
+  if (length <= 0) return std::string();
+  std::string log(static_cast<std::size_t>(length), '\0');
+  GLsizei written = 0;
+  readLog(asGLuint(object), length, &written, log.data());
+  log.resize(static_cast<std::size_t>(std::clamp(written, 0, length)));
+  return log;
+}
+extern "C" std::string gea_three_webgl_get_shader_info_log(double shader) {
+  geaTrapCheck("gea_three_webgl_get_shader_info_log");
+  if (!ensureWebGLCurrent("getShaderInfoLog")) return std::string();
+  return geaInfoLog(shader, gWebGL.glGetShaderiv, gWebGL.glGetShaderInfoLog);
+}
+extern "C" std::string gea_three_webgl_get_program_info_log(double program) {
+  geaTrapCheck("gea_three_webgl_get_program_info_log");
+  if (!ensureWebGLCurrent("getProgramInfoLog")) return std::string();
+  return geaInfoLog(program, gWebGL.glGetProgramiv, gWebGL.glGetProgramInfoLog);
 }
 extern "C" void gea_three_webgl_delete_program(double program) {
   geaTrapCheck("gea_three_webgl_delete_program"); GEA_WEBGL_VOID("deleteProgram"); gWebGL.glDeleteProgram(asGLuint(program)); }

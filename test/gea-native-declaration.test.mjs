@@ -25,8 +25,9 @@ assert.ok(windows.sources.includes('native/audio_host.mm'))
 const host = fs.readFileSync(path.join(root, 'native', 'angle_webgl_host.mm'), 'utf8')
 const roles = Object.entries(windows.requires.gles.files)
 assert.deepEqual(roles.map(([role]) => role).sort(), ['egl', 'gles'])
+// A Windows checkout made with Git's core.autocrlf (its installer's default) reads the host with CRLF line ends.
 for (const [role, { define, default: fallback }] of roles) {
-  assert.match(host, new RegExp(`#ifndef ${define}\\n#define ${define} "${fallback.replace('.', '\\.')}"`), `${role}: the host defaults ${define}`)
+  assert.match(host, new RegExp(`#ifndef ${define}\\r?\\n#define ${define} "${fallback.replace('.', '\\.')}"`), `${role}: the host defaults ${define}`)
   assert.match(host, new RegExp(`openWin32\\([^)]*${define}\\)`), `${role}: the host loads ${define}`)
 }
 

@@ -137,3 +137,52 @@ test('declaration blocks never fold, but the blocks beneath them still do', () =
   const generic = '/** @param {T} a */\n/** @template T */\nfunction f( a ) {}'
   assert.equal(foldAdjacentJSDocBlocks(generic), generic)
 })
+
+// WebGLRenderer.render renders any Object3D: a post pass renders its bare
+// quad Mesh. The renderer hands that root to each input below, and the
+// compiler converts an Object3D entering a Scene-typed input with a checked
+// downcast, which throws for the Mesh. Each input therefore states Object3D,
+// after the declaration overlay (which lifts `scene: Scene` from @types/three)
+// has written its block too.
+test('the renderer hands its Object3D root only to Object3D inputs', async () => {
+  const { declarationOverlayTransform } = await import('@geastack/compiler/dist/semantics/declaration-overlay-transform.js')
+  const object3D = "import('../../core/Object3D.js').Object3D"
+  const sites = [
+    ['webgl/WebGLRenderLists.js', 'get', 'scene', object3D],
+    ['webgl/WebGLRenderStates.js', 'get', 'scene', object3D],
+    ['webgl/WebGLBackground.js', 'getBackground', 'scene', object3D],
+    ['webgl/WebGLBackground.js', 'render', 'scene', object3D],
+    ['webgl/WebGLBackground.js', 'addToRenderList', 'scene', object3D],
+    ['webgl/WebGLShadowMap.js', 'render', 'scene', object3D],
+    ['WebGLRenderer.js', 'compile', 'targetScene', '?Object3D'],
+  ]
+  const transformed = new Map()
+  for (const [file, name, parameterName, expected] of sites) {
+    const fileName = path.join(path.dirname(rendererPath), file)
+    if (!transformed.has(file)) {
+      const text = fs.readFileSync(fileName, 'utf8')
+      const overlaid = declarationOverlayTransform({ fileName, text }) ?? text
+      transformed.set(file, transformSource({ fileName, text: overlaid }) ?? overlaid)
+    }
+    const source = ts.createSourceFile(fileName, transformed.get(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+    const functions = []
+    const visit = (node) => {
+      if (ts.isFunctionDeclaration(node) && node.name?.text === name) functions.push(node)
+      if (
+        ts.isBinaryExpression(node) &&
+        ts.isPropertyAccessExpression(node.left) &&
+        node.left.expression.kind === ts.SyntaxKind.ThisKeyword &&
+        node.left.name.text === name &&
+        ts.isFunctionExpression(node.right)
+      )
+        functions.push(node.right)
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+    assert.equal(functions.length, 1, `${file} ${name}`)
+    const parameter = functions[0].parameters.find((candidate) => candidate.name.text === parameterName)
+    assert.equal(ts.getJSDocType(parameter)?.getText(), expected, `${file} ${name} ${parameterName}`)
+  }
+  // Only a Scene has a background; each read names the Scene it reads.
+  assert.doesNotMatch(transformed.get('webgl/WebGLBackground.js'), /\bscene\.background/)
+})
