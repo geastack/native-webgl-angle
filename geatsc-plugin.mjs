@@ -5540,6 +5540,18 @@ function requireWebGLStateTextureImageSource( value ) {
       fileName,
       "WebGLBindingStates interleaved attribute import",
     );
+    // The binding-state fast paths below test `object instanceof InstancedMesh`; three's own
+    // file reads `object.isInstancedMesh` and imports no InstancedMesh. An app that patches
+    // three on disk may have added the import already.
+    if (!transformed.includes("import { InstancedMesh } from '../../objects/InstancedMesh.js';")) {
+      transformed = replaceOne(
+        transformed,
+        "import { IntType } from '../../constants.js';",
+        "import { IntType } from '../../constants.js';\nimport { InstancedMesh } from '../../objects/InstancedMesh.js';",
+        fileName,
+        "WebGLBindingStates instanced mesh import",
+      );
+    }
     transformed = replaceOne(
       transformed,
       "\t\t\tif ( index !== null ) {\n\n\t\t\t\tgl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, attributes.get( index ).buffer );",
