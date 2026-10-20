@@ -97,6 +97,14 @@ const hostFunctions = [
   ],
   ...nativeUploadFunctions,
   ...nativeReadbackFunctions,
+  // Resources files (native/resource_host.mm): read whole, in place, into the caller's Uint8Array.
+  ['threeResourceSize','gea_three_resource_size','double','extern "C" double gea_three_resource_size(std::string name);'],
+  ['threeResourceRead','gea_three_resource_read_native','double',`
+extern "C" double gea_three_resource_read_bytes(std::string name, void* bytes, double byteLength);
+inline double gea_three_resource_read_native(std::string name, const gea::Ref<gea::TypedArray<std::uint8_t>>& destination) {
+  if (!destination) return -1;
+  return gea_three_resource_read_bytes(std::move(name), destination->data(), static_cast<double>(destination->size()));
+}`],
   ['threeWebGLBlitFramebuffer','gea_three_webgl_blit_framebuffer','void','extern "C" void gea_three_webgl_blit_framebuffer(double,double,double,double,double,double,double,double,double,double);'],
   ['threeWebGLReadPixelsPack','gea_three_webgl_read_pixels_pack','void','extern "C" void gea_three_webgl_read_pixels_pack(double,double,double,double,double,double,double);'],
   ['threeWebGLFenceSync','gea_three_webgl_fence_sync','double','extern "C" double gea_three_webgl_fence_sync();'],
