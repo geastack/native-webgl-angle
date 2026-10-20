@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import path, { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { nativeTestOutDir } from './out-dir.mjs'
+import { executableSuffix, nativeTestOutDir } from './out-dir.mjs'
 const runtimeInclude = dirname(fileURLToPath(import.meta.resolve('@geastack/compiler/src/targets/cpp/runtime/gea_runtime_builtins.cpp')))
 const packageDir = path.dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 process.env.GEATSC2_WEBGL_PLUGIN = path.join(packageDir, 'geatsc-plugin.mjs')
@@ -24,7 +24,7 @@ const result = compile({ rootFileNames: [entry], projectFileName: null, sourceOv
 assert.ok(result.certificate && result.source, JSON.stringify({ diagnostics: result.diagnostics.diagnostics, refusals: result.refusals }, null, 2))
 assert.deepEqual(result.emissionRefusals, [])
 
-const binary = join(nativeTestOutDir(), 'info-log-contract-test')
+const binary = join(nativeTestOutDir(), `info-log-contract-test${executableSuffix}`)
 execFileSync(process.env.CXX ?? 'clang++', ['-std=c++20', '-O1', '-fsanitize=address,undefined', `-I${runtimeInclude}`, '-x', 'c++', '-', '-o', binary], {
   input: `${result.source}
 extern "C" double gea_three_webgl_create_shader(double) { return 3; }
@@ -36,5 +36,6 @@ int main() { __gea_top_level(); }
   env: { ...process.env, TMPDIR: nativeTestOutDir() },
   stdio: ['pipe', 'inherit', 'inherit'],
 })
-assert.equal(execFileSync(binary, { encoding: 'utf8' }), "ERROR: 0:1: 'x' : undeclared identifier\nlink failed\n")
+// Windows opens a C++ program's stdout in text mode: `\n` arrives as `\r\n`.
+assert.equal(execFileSync(binary, { encoding: 'utf8' }).replaceAll('\r\n', '\n'), "ERROR: 0:1: 'x' : undeclared identifier\nlink failed\n")
 console.log('Shader and program info logs reach the facade from the host under ASan/UBSan')
