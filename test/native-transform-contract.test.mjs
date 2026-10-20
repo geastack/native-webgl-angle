@@ -230,6 +230,35 @@ const requireImageSource = nativeWebGLTextures.slice(requireImageStart, requireI
 assert.match(requireImageSource, /return \{\s+data: value\.data,\s+width: value\.width,\s+height: value\.height,/)
 assert.match(requireImageSource, /complete: 'complete' in value \? value\.complete : undefined/)
 assert.doesNotMatch(requireImageSource, /return value;/)
+// `setupDepthTexture` sizes the depth texture by writing the framebuffer size
+// into the texture's own image, which `setTexture2D` then allocates from. A
+// write into the copy above left every depth texture at DepthTexture's 4x4.
+const textureFunction = (text, name) => {
+  const syntax = ts.createSourceFile(webGLTexturesPath, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  let found
+  const visit = (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node.getText(syntax)
+    ts.forEachChild(node, visit)
+  }
+  visit(syntax)
+  assert.ok(found, name)
+  return found
+}
+for (const text of [upstreamWebGLTextures, nativeWebGLTextures]) {
+  const allocations = []
+  const textureProperties = {}
+  const setupDepthTexture = new Function('state', '_gl', 'properties', 'setTexture2D', 'getRenderTargetSamples', 'useMultisampledRTT', 'DepthFormat', 'DepthStencilFormat',
+    `${textureFunction(nativeWebGLTextures, 'requireTextureImageRecord')}\n${textureFunction(text, 'setupDepthTexture')}; return setupDepthTexture;`)(
+    { bindFramebuffer() {} },
+    { FRAMEBUFFER: 0x8D40, TEXTURE_2D: 0x0DE1, DEPTH_ATTACHMENT: 0x8D00, DEPTH_STENCIL_ATTACHMENT: 0x821A, framebufferTexture2D() {} },
+    { get: () => textureProperties, has: () => false },
+    (texture) => allocations.push([texture.image.width, texture.image.height]),
+    () => 0, () => false, 1026, 1027)
+  const depthTexture = { isDepthTexture: true, format: 1026, image: { width: 4, height: 4, depth: 1 } }
+  setupDepthTexture(null, { width: 640, height: 480, depthTexture }, 0)
+  assert.deepEqual(depthTexture.image, { width: 640, height: 480, depth: 1 })
+  assert.deepEqual(allocations, [[640, 480]])
+}
 
 const upstreamWebGLUniforms = fs.readFileSync(webGLUniformsPath, 'utf8')
 const nativeWebGLUniforms = transformSource({ fileName: webGLUniformsPath, text: upstreamWebGLUniforms })
