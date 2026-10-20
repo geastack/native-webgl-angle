@@ -35,6 +35,16 @@ export function nativeWebGLSwap(): void {
   threeWebGLSwap()
 }
 
+/**
+ * Vertical sync from the next frame on. Off presents at once, so the frame rate shows what
+ * a frame costs. On paces presents to the display: interval 1 where nothing else paces the
+ * frames (a desktop window with no display link), the host's own pacing on Apple platforms,
+ * where a second waiter would only make frames miss refreshes.
+ */
+export function nativeWebGLSetVsync(on: boolean): void {
+  threeWebGLSetVsync(on ? 1 : 0)
+}
+
 // GPU time-elapsed timers (GL_EXT_disjoint_timer_query): begin returns a timer id (0 when
 // unsupported), end closes the open timer, and result is the elapsed nanoseconds, or -1 while the
 // GPU has not finished it. A timer is released once its result has been read.
@@ -188,6 +198,8 @@ declare function threeWebGLHeight(): number
 declare function threeWebGLDevicePixelRatio(): number
 /** Lifecycle entry: presents the native surface and may run platform hooks; not an inert call. */
 declare function threeWebGLSwap(): void
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLSetVsync(on: number): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeAngleSmokeLog(message: string): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */

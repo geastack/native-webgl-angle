@@ -630,6 +630,10 @@ struct AngleWebGLState {
 };
 
 static AngleWebGLState gWebGL;
+// Vertical sync as the program chose it (nativeWebGLSetVsync): 1 on, 0 off, -1 not chosen
+// (then GEA_ANGLE_SWAP_INTERVAL, else 0; see makeCurrent).
+static int gVsyncChoice = -1;
+extern "C" void gea_three_webgl_set_vsync(double on) { gVsyncChoice = on != 0 ? 1 : 0; }
 static GLenum hostReadbackError = 0;
 static std::chrono::steady_clock::time_point gProfileSizeSync;
 static bool gProfileSizeSyncPending = false;
@@ -945,9 +949,19 @@ static bool makeCurrent(const char *label) {
   // reintroduced because the layer still syncs its own present.
   // `GEA_ANGLE_SWAP_INTERVAL` overrides it (set `1` to restore the old
   // double-paced behaviour) so both arms can be measured from one binary.
+  // A program's choice (nativeWebGLSetVsync) wins: off is interval 0; on is
+  // interval 1 where nothing else paces the frames (a desktop window with no
+  // display link), and the default above on Apple platforms, where the display
+  // link and the layer's own sync already do.
   if (gWebGL.eglSwapInterval) {
     const char *requested = std::getenv("GEA_ANGLE_SWAP_INTERVAL");
-    const EGLint interval = requested ? static_cast<EGLint>(std::atoi(requested)) : 0;
+    const EGLint fallback = requested ? static_cast<EGLint>(std::atoi(requested)) : 0;
+#if defined(__APPLE__)
+    const EGLint paced = fallback;
+#else
+    const EGLint paced = 1;
+#endif
+    const EGLint interval = gVsyncChoice == 0 ? 0 : gVsyncChoice == 1 ? paced : fallback;
     gWebGL.eglSwapInterval(gWebGL.display, interval);
   }
   if (gWebGL.eglMakeCurrent(gWebGL.display, gWebGL.surface, gWebGL.surface, gWebGL.context) == EGL_FALSE_VALUE) {
