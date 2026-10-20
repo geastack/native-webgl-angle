@@ -157,6 +157,12 @@ inline double gea_three_resource_read_native(std::string name, const gea::Ref<ge
     'extern "C" void gea_three_webgl_swap();',
   ],
   [
+    "threeWebGLSetVsync",
+    "gea_three_webgl_set_vsync",
+    "void",
+    'extern "C" void gea_three_webgl_set_vsync(double on);',
+  ],
+  [
     "threeAngleSmokeLog",
     "gea_three_angle_smoke_log",
     "void",
