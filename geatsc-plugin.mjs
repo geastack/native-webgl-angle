@@ -10617,6 +10617,27 @@ function WebGLRenderState( extensions ) {`,
         `Three PMREMGenerator source at ${fileName} has ${uniformLiteralStarts} ShaderMaterial uniform starts and ${uniformLiteralEnds} closes; expected 4 of each`,
       );
     }
+    // The GGX and blur shaders' `defines` literals are typed as the table
+    // ShaderMaterial.defines is, as WebGLShadowMap's VSM literal is: an uncast
+    // literal reaches setValues' dynamic write as a record and aborts natively.
+    const defineLiteralStarts =
+      transformed.split("\t\tdefines: {").length - 1;
+    const defineLiteralEnds =
+      transformed.split("\t\t},\n\n\t\tuniforms: {").length - 1;
+    if (defineLiteralStarts !== 2 || defineLiteralEnds !== 2) {
+      throw new Error(
+        `Three PMREMGenerator source at ${fileName} has ${defineLiteralStarts} ShaderMaterial defines starts and ${defineLiteralEnds} closes; expected 2 of each`,
+      );
+    }
+    transformed = transformed
+      .replaceAll(
+        "\t\tdefines: {",
+        "\t\tdefines: /** @type {Record<string, string|number|boolean>} */ ( {",
+      )
+      .replaceAll(
+        "\t\t},\n\n\t\tuniforms: {",
+        "\t\t} ),\n\n\t\tuniforms: {",
+      );
     transformed = transformed
       .replaceAll(
         "\t\tuniforms: {",
