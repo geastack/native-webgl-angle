@@ -6406,11 +6406,14 @@ ${wiringText.replace(/\t\t\t\t/g, "\t\t\t\t")}
     // cannot do so natively: the field holds a `this`-bound function expression
     // no app function converts to. This hook is an ordinary function-typed
     // field instead; render() offers each call to it first, and a hook that
-    // returns true has rendered the shadows itself.
+    // returns true has rendered the shadows itself. Its scene is render()'s
+    // object, which three takes as any Object3D (PMREMGenerator and fullscreen
+    // passes render bare meshes), so a Scene there would be a checked cast
+    // that fails on them.
     transformed = replaceOne(
       transformed,
       "\tconst scope = this;\n",
-      "\tconst scope = this;\n\n\t/** @type {((lights: Array<import('../../lights/Light.js').Light>, scene: import('../../scenes/Scene.js').Scene, camera: import('../../cameras/Camera.js').Camera) => boolean)|null} */\n\tthis.nativeRenderHook = null;\n",
+      "\tconst scope = this;\n\n\t/** @type {((lights: Array<import('../../lights/Light.js').Light>, scene: import('../../core/Object3D.js').Object3D, camera: import('../../cameras/Camera.js').Camera) => boolean)|null} */\n\tthis.nativeRenderHook = null;\n",
       fileName,
       "WebGLShadowMap native render hook field",
     );
