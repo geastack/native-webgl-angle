@@ -88,10 +88,16 @@ static double gGeaPointerW = 0.0; // view size at the last pointer event
 static double gGeaPointerH = 0.0;
 static double gGeaPointerSeq = 0.0; // increments on every pointer event
 static bool gGeaPointerDown = false; // primary button
+// Scroll wheel and trackpad scrolling, summed since launch in CSS px with the
+// DOM's sign (WheelEvent.deltaY: positive scrolls the page down). The game
+// takes the difference between two reads as the wheel's travel.
+static double gGeaWheelY = 0.0;
 
 // gea_three_pointer_state(channel): 0=x, 1=y (top-left origin), 2=view width,
 // 3=view height (same units as x/y), 4=move sequence (0 = pointer never
-// seen; changes on every pointer event), 5=primary button (1 = down).
+// seen; changes on every pointer event), 5=primary button (1 = down),
+// 6=wheel travel since launch (DOM deltaY sign, px; read it twice and take
+// the difference).
 //
 // GEA_THREE_SYNTH_POINTER="<x0>,<y0>:<x1>,<y1>:<startMs>:<endMs>" — perf/CI
 // hook, the pointer twin of GEA_THREE_SYNTH_KEY: report a pointer sweeping
@@ -145,6 +151,7 @@ extern "C" double gea_three_pointer_state(double channel) {
     case 3: return gGeaPointerH;
     case 4: return gGeaPointerSeq;
     case 5: return gGeaPointerDown ? 1.0 : 0.0;
+    case 6: return gGeaWheelY;
   }
   return 0.0;
 }
@@ -705,11 +712,18 @@ static id gGeaPointerMonitor = nil;
 static void geaInstallPointerMonitor(void) {
   if (gGeaPointerMonitor) return;
   const NSEventMask mask = NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged |
-                           NSEventMaskLeftMouseDown | NSEventMaskLeftMouseUp;
+                           NSEventMaskLeftMouseDown | NSEventMaskLeftMouseUp | NSEventMaskScrollWheel;
   gGeaPointerMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:mask
                                                              handler:^NSEvent *(NSEvent *event) {
     NSView *host = gWebGL.hostView;
     if (host && host.window && event.window == host.window) {
+      if (event.type == NSEventTypeScrollWheel) {
+        // As WebKit makes deltaY: AppKit's sign flipped, and a notched wheel's
+        // lines at 40 px each (trackpads and Magic Mouse report pixels).
+        const double dy = event.scrollingDeltaY;
+        gGeaWheelY -= event.hasPreciseScrollingDeltas ? dy : dy * 40.0;
+        return event;
+      }
       if (event.type == NSEventTypeLeftMouseDown) gGeaPointerDown = true;
       else if (event.type == NSEventTypeLeftMouseUp) gGeaPointerDown = false;
       const NSPoint p = [host convertPoint:event.locationInWindow fromView:nil];
