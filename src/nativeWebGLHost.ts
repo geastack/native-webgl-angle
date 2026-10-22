@@ -82,7 +82,9 @@ export function nativeGamepadState(channel: number): number {
 // Channels: 0=x, 1=y (view coordinates, TOP-LEFT origin — clientX/clientY
 // semantics), 2=view width, 3=view height (same units as x/y), 4=move
 // sequence (changes on every pointer event; 0 = pointer never seen),
-// 5=primary button (1 = down). Backed by the host NSView's NSTrackingArea
+// 5=primary button (1 = down), 6=scroll wheel travel since launch (px, the
+// DOM's deltaY sign: read it each frame and take the difference). Backed by
+// the host window's local NSEvent monitor (scrollWheel: too) and its NSTrackingArea
 // mouseMoved:/mouseDragged:/mouseDown:/mouseUp: handlers. Also drivable
 // headlessly via GEA_THREE_SYNTH_POINTER="x0,y0:x1,y1:startMs:endMs"
 // (normalized [0,1] coordinates, reported with width=height=1).
