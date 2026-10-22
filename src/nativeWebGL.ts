@@ -985,7 +985,9 @@ export class NativeWebGL2RenderingContext {
     if (name === this.VIEWPORT || name === this.SCISSOR_BOX) return new Int32Array([0, 0, this.canvasWidth(), this.canvasHeight()])
     if (name === this.ALIASED_LINE_WIDTH_RANGE || name === this.ALIASED_POINT_SIZE_RANGE) return new Float32Array([1, 1])
     if (name === this.COMPRESSED_TEXTURE_FORMATS) return new Int32Array(0)
-    if (name === 0x84FF) return 1
+    // MAX_TEXTURE_MAX_ANISOTROPY_EXT: ANGLE on Metal reports 16, as Chrome does. three clamps every texture's
+    // anisotropy to it, so 1 turned anisotropic filtering off.
+    if (name === 0x84FF) return 16
     return 0
   }
 
