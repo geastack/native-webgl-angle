@@ -78,6 +78,30 @@ const hostFunctions = [
  ['threeWebGLCopyTexImage2D','gea_three_webgl_copy_tex_image_2d','void','extern "C" void gea_three_webgl_copy_tex_image_2d(double,double,double,double,double,double,double,double);'],
  ['threeWebGLCopyTexSubImage2D','gea_three_webgl_copy_tex_sub_image_2d','void','extern "C" void gea_three_webgl_copy_tex_sub_image_2d(double,double,double,double,double,double,double,double);'],
   [
+    "threeWebGLBindBufferBase",
+    "gea_three_webgl_bind_buffer_base",
+    "void",
+    'extern "C" void gea_three_webgl_bind_buffer_base(double target, double index, double buffer);',
+  ],
+  [
+    "threeWebGLBindBufferRange",
+    "gea_three_webgl_bind_buffer_range",
+    "void",
+    'extern "C" void gea_three_webgl_bind_buffer_range(double target, double index, double buffer, double offset, double size);',
+  ],
+  [
+    "threeWebGLGetUniformBlockIndex",
+    "gea_three_webgl_get_uniform_block_index",
+    "double",
+    'extern "C" double gea_three_webgl_get_uniform_block_index(double program, std::string name);',
+  ],
+  [
+    "threeWebGLUniformBlockBinding",
+    "gea_three_webgl_uniform_block_binding",
+    "void",
+    'extern "C" void gea_three_webgl_uniform_block_binding(double program, double blockIndex, double binding);',
+  ],
+  [
     "threeWebGLVertexAttribDivisor",
     "gea_three_webgl_vertex_attrib_divisor",
     "void",

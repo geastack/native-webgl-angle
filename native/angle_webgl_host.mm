@@ -347,6 +347,10 @@ using PFNEGLSWAPINTERVALPROC = EGLBoolean (*)(EGLDisplay, EGLint);
 using PFNGLACTIVETEXTUREPROC = void (*)(GLenum);
 using PFNGLATTACHSHADERPROC = void (*)(GLuint, GLuint);
 using PFNGLBINDBUFFERPROC = void (*)(GLenum, GLuint);
+using PFNGLBINDBUFFERBASEPROC = void (*)(GLenum, GLuint, GLuint);
+using PFNGLBINDBUFFERRANGEPROC = void (*)(GLenum, GLuint, GLuint, GLintptr, GLsizeiptr);
+using PFNGLGETUNIFORMBLOCKINDEXPROC = GLuint (*)(GLuint, const char *);
+using PFNGLUNIFORMBLOCKBINDINGPROC = void (*)(GLuint, GLuint, GLuint);
 using PFNGLBINDFRAMEBUFFERPROC = void (*)(GLenum, GLuint);
 using PFNGLBINDRENDERBUFFERPROC = void (*)(GLenum, GLuint);
 using PFNGLBINDTEXTUREPROC = void (*)(GLenum, GLuint);
@@ -495,6 +499,10 @@ struct AngleWebGLState {
   PFNGLACTIVETEXTUREPROC glActiveTexture = nullptr;
   PFNGLATTACHSHADERPROC glAttachShader = nullptr;
   PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
+  PFNGLBINDBUFFERBASEPROC glBindBufferBase = nullptr;
+  PFNGLBINDBUFFERRANGEPROC glBindBufferRange = nullptr;
+  PFNGLGETUNIFORMBLOCKINDEXPROC glGetUniformBlockIndex = nullptr;
+  PFNGLUNIFORMBLOCKBINDINGPROC glUniformBlockBinding = nullptr;
   PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
   PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer = nullptr;
   PFNGLBINDTEXTUREPROC glBindTexture = nullptr;
@@ -1030,6 +1038,10 @@ static bool loadGlSymbols() {
   LOAD_GL(glActiveTexture, PFNGLACTIVETEXTUREPROC)
   LOAD_GL(glAttachShader, PFNGLATTACHSHADERPROC)
   LOAD_GL(glBindBuffer, PFNGLBINDBUFFERPROC)
+  LOAD_GL(glBindBufferBase, PFNGLBINDBUFFERBASEPROC)
+  LOAD_GL(glBindBufferRange, PFNGLBINDBUFFERRANGEPROC)
+  LOAD_GL(glGetUniformBlockIndex, PFNGLGETUNIFORMBLOCKINDEXPROC)
+  LOAD_GL(glUniformBlockBinding, PFNGLUNIFORMBLOCKBINDINGPROC)
   LOAD_GL(glBindFramebuffer, PFNGLBINDFRAMEBUFFERPROC)
   LOAD_GL(glBindRenderbuffer, PFNGLBINDRENDERBUFFERPROC)
   LOAD_GL(glBindTexture, PFNGLBINDTEXTUREPROC)
@@ -2402,6 +2414,23 @@ extern "C" void gea_three_webgl_draw_arrays(double mode, double first, double co
 extern "C" void gea_three_webgl_vertex_attrib_divisor(double index, double divisor) {
   geaTrapCheck("gea_three_webgl_vertex_attrib_divisor"); GEA_WEBGL_VOID("vertexAttribDivisor");
   gWebGL.glVertexAttribDivisor(asGLuint(index), asGLuint(divisor)); }
+// Indexed binds also set the target's generic binding. The host shadows only the
+// ARRAY_BUFFER and COPY_READ/WRITE bindings (bindNativeBuffer), and the uniform
+// staging path queries UNIFORM_BUFFER_BINDING instead of shadowing it, so neither
+// call needs to update a shadow.
+extern "C" void gea_three_webgl_bind_buffer_base(double target, double index, double buffer) {
+  geaTrapCheck("gea_three_webgl_bind_buffer_base"); GEA_WEBGL_VOID("bindBufferBase");
+  gWebGL.glBindBufferBase(asGLenum(target), asGLuint(index), asGLuint(buffer)); }
+extern "C" void gea_three_webgl_bind_buffer_range(double target, double index, double buffer, double offset, double size) {
+  geaTrapCheck("gea_three_webgl_bind_buffer_range"); GEA_WEBGL_VOID("bindBufferRange");
+  gWebGL.glBindBufferRange(asGLenum(target), asGLuint(index), asGLuint(buffer),
+    static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(size)); }
+extern "C" double gea_three_webgl_get_uniform_block_index(double program, std::string name) {
+  geaTrapCheck("gea_three_webgl_get_uniform_block_index"); GEA_WEBGL_DOUBLE("getUniformBlockIndex");
+  return gWebGL.glGetUniformBlockIndex(asGLuint(program), name.c_str()); }
+extern "C" void gea_three_webgl_uniform_block_binding(double program, double blockIndex, double binding) {
+  geaTrapCheck("gea_three_webgl_uniform_block_binding"); GEA_WEBGL_VOID("uniformBlockBinding");
+  gWebGL.glUniformBlockBinding(asGLuint(program), asGLuint(blockIndex), asGLuint(binding)); }
 extern "C" void gea_three_webgl_draw_elements_instanced(double mode, double count, double type, double offset, double instanceCount) {
   geaTrapCheck("gea_three_webgl_draw_elements_instanced"); GEA_WEBGL_VOID("drawElementsInstanced");
   gWebGL.glDrawElementsInstanced(asGLenum(mode), asGLsizei(count), asGLenum(type),
