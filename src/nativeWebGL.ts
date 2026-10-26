@@ -47,6 +47,10 @@ import {
   nativeWebGLDrawArraysInstanced,
   nativeWebGLDrawElementsInstanced,
   nativeWebGLVertexAttribDivisor,
+  nativeWebGLBindBufferBase,
+  nativeWebGLBindBufferRange,
+  nativeWebGLGetUniformBlockIndex,
+  nativeWebGLUniformBlockBinding,
   nativeWebGLDrawBuffers,
   nativeWebGLDrawElements,
   nativeWebGLEnable,
@@ -1260,10 +1264,18 @@ export class NativeWebGL2RenderingContext {
   getVertexAttrib(_index: number, _pname: number): number { return 0 }
   getVertexAttribOffset(_index: number, _pname: number): number { return 0 }
   getUniform(_program: NativeProgram | null, _location: NativeHandle | null): number { return 0 }
-  getUniformBlockIndex(_program: NativeProgram | null, _uniformBlockName: string): number { return 0 }
-  uniformBlockBinding(_program: NativeProgram | null, _uniformBlockIndex: number, _uniformBlockBinding: number): void {}
-  bindBufferBase(_target: number, _index: number, _buffer: NativeHandle | null): void {}
-  bindBufferRange(_target: number, _index: number, _buffer: NativeHandle | null, _offset: number, _size: number): void {}
+  getUniformBlockIndex(program: NativeProgram | null, uniformBlockName: string): number {
+    return nativeWebGLGetUniformBlockIndex(nullableNativeHandle(program), uniformBlockName)
+  }
+  uniformBlockBinding(program: NativeProgram | null, uniformBlockIndex: number, uniformBlockBinding: number): void {
+    nativeWebGLUniformBlockBinding(nullableNativeHandle(program), uniformBlockIndex, uniformBlockBinding)
+  }
+  bindBufferBase(target: number, index: number, buffer: NativeHandle | null): void {
+    nativeWebGLBindBufferBase(target, index, nullableNativeHandle(buffer))
+  }
+  bindBufferRange(target: number, index: number, buffer: NativeHandle | null, offset: number, size: number): void {
+    nativeWebGLBindBufferRange(target, index, nullableNativeHandle(buffer), offset, size)
+  }
   fenceSync(_condition: number, _flags: number): NativeHandle | null {
     const sync = threeWebGLFenceSync()
     return sync ? createHandle('sync', sync) : null
