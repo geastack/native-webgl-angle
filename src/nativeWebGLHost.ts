@@ -366,6 +366,23 @@ declare function threeWebGLGetError(): number
 declare function threeNativeProfilePhase(phase: number): void
 export function nativeProfilePhase(phase: number): void { threeNativeProfilePhase(phase) }
 
+export function nativeWebGLBindBufferBase(target: number, index: number, buffer: number): void { threeWebGLBindBufferBase(target, index, buffer) }
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLBindBufferBase(target: number, index: number, buffer: number): void
+export function nativeWebGLBindBufferRange(target: number, index: number, buffer: number, offset: number, size: number): void {
+  threeWebGLBindBufferRange(target, index, buffer, offset, size)
+}
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLBindBufferRange(target: number, index: number, buffer: number, offset: number, size: number): void
+export function nativeWebGLGetUniformBlockIndex(program: number, name: string): number { return threeWebGLGetUniformBlockIndex(program, name) }
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLGetUniformBlockIndex(program: number, name: string): number
+export function nativeWebGLUniformBlockBinding(program: number, blockIndex: number, binding: number): void {
+  threeWebGLUniformBlockBinding(program, blockIndex, binding)
+}
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLUniformBlockBinding(program: number, blockIndex: number, binding: number): void
+
 export function nativeWebGLVertexAttribDivisor(index: number, divisor: number): void { threeWebGLVertexAttribDivisor(index, divisor) }
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLVertexAttribDivisor(index: number, divisor: number): void
