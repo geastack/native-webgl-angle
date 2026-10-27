@@ -1038,10 +1038,13 @@ static bool loadGlSymbols() {
   LOAD_GL(glActiveTexture, PFNGLACTIVETEXTUREPROC)
   LOAD_GL(glAttachShader, PFNGLATTACHSHADERPROC)
   LOAD_GL(glBindBuffer, PFNGLBINDBUFFERPROC)
-  LOAD_GL(glBindBufferBase, PFNGLBINDBUFFERBASEPROC)
-  LOAD_GL(glBindBufferRange, PFNGLBINDBUFFERRANGEPROC)
-  LOAD_GL(glGetUniformBlockIndex, PFNGLGETUNIFORMBLOCKINDEXPROC)
-  LOAD_GL(glUniformBlockBinding, PFNGLUNIFORMBLOCKBINDINGPROC)
+  // Uniform-buffer entry points are optional like the array/3D ones: a GLES
+  // without them (threejs-rendozer exports none) still starts, and only a
+  // program that uses uniform groups loses them, with a log line per call.
+  gWebGL.glBindBufferBase = loadGl<PFNGLBINDBUFFERBASEPROC>("glBindBufferBase");
+  gWebGL.glBindBufferRange = loadGl<PFNGLBINDBUFFERRANGEPROC>("glBindBufferRange");
+  gWebGL.glGetUniformBlockIndex = loadGl<PFNGLGETUNIFORMBLOCKINDEXPROC>("glGetUniformBlockIndex");
+  gWebGL.glUniformBlockBinding = loadGl<PFNGLUNIFORMBLOCKBINDINGPROC>("glUniformBlockBinding");
   LOAD_GL(glBindFramebuffer, PFNGLBINDFRAMEBUFFERPROC)
   LOAD_GL(glBindRenderbuffer, PFNGLBINDRENDERBUFFERPROC)
   LOAD_GL(glBindTexture, PFNGLBINDTEXTUREPROC)
@@ -2414,22 +2417,28 @@ extern "C" void gea_three_webgl_draw_arrays(double mode, double first, double co
 extern "C" void gea_three_webgl_vertex_attrib_divisor(double index, double divisor) {
   geaTrapCheck("gea_three_webgl_vertex_attrib_divisor"); GEA_WEBGL_VOID("vertexAttribDivisor");
   gWebGL.glVertexAttribDivisor(asGLuint(index), asGLuint(divisor)); }
+static bool requireGl(const void *fn, const char *name);
 // Indexed binds also set the target's generic binding. The host shadows only the
 // ARRAY_BUFFER and COPY_READ/WRITE bindings (bindNativeBuffer), and the uniform
 // staging path queries UNIFORM_BUFFER_BINDING instead of shadowing it, so neither
 // call needs to update a shadow.
 extern "C" void gea_three_webgl_bind_buffer_base(double target, double index, double buffer) {
   geaTrapCheck("gea_three_webgl_bind_buffer_base"); GEA_WEBGL_VOID("bindBufferBase");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glBindBufferBase), "glBindBufferBase")) return;
   gWebGL.glBindBufferBase(asGLenum(target), asGLuint(index), asGLuint(buffer)); }
 extern "C" void gea_three_webgl_bind_buffer_range(double target, double index, double buffer, double offset, double size) {
   geaTrapCheck("gea_three_webgl_bind_buffer_range"); GEA_WEBGL_VOID("bindBufferRange");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glBindBufferRange), "glBindBufferRange")) return;
   gWebGL.glBindBufferRange(asGLenum(target), asGLuint(index), asGLuint(buffer),
     static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(size)); }
 extern "C" double gea_three_webgl_get_uniform_block_index(double program, std::string name) {
   geaTrapCheck("gea_three_webgl_get_uniform_block_index"); GEA_WEBGL_DOUBLE("getUniformBlockIndex");
+  // GL_INVALID_INDEX: the block is reported as absent.
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glGetUniformBlockIndex), "glGetUniformBlockIndex")) return 4294967295.0;
   return gWebGL.glGetUniformBlockIndex(asGLuint(program), name.c_str()); }
 extern "C" void gea_three_webgl_uniform_block_binding(double program, double blockIndex, double binding) {
   geaTrapCheck("gea_three_webgl_uniform_block_binding"); GEA_WEBGL_VOID("uniformBlockBinding");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glUniformBlockBinding), "glUniformBlockBinding")) return;
   gWebGL.glUniformBlockBinding(asGLuint(program), asGLuint(blockIndex), asGLuint(binding)); }
 extern "C" void gea_three_webgl_draw_elements_instanced(double mode, double count, double type, double offset, double instanceCount) {
   geaTrapCheck("gea_three_webgl_draw_elements_instanced"); GEA_WEBGL_VOID("drawElementsInstanced");
