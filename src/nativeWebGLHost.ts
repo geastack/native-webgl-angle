@@ -366,6 +366,13 @@ declare function threeWebGLGetError(): number
 declare function threeNativeProfilePhase(phase: number): void
 export function nativeProfilePhase(phase: number): void { threeNativeProfilePhase(phase) }
 
+export function nativePushDebugGroup(label: string): void { threeWebGLPushDebugGroup(label) }
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLPushDebugGroup(label: string): void
+export function nativePopDebugGroup(): void { threeWebGLPopDebugGroup() }
+/** @gea-host-inert Native state only; retains no script references and invokes no script. */
+declare function threeWebGLPopDebugGroup(): void
+
 export function nativeWebGLBindBufferBase(target: number, index: number, buffer: number): void { threeWebGLBindBufferBase(target, index, buffer) }
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLBindBufferBase(target: number, index: number, buffer: number): void

@@ -277,6 +277,10 @@ declare function threeWebGLTexImage2D(target: number, level: number, internalFor
 /** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
 declare function threeWebGLTexSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, type: number, values: BufferSourceLike): void
 /** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
+declare function threeWebGLCompressedTexImage2D(target: number, level: number, internalFormat: number, width: number, height: number, values: BufferSourceLike): void
+/** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
+declare function threeWebGLCompressedTexSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, values: BufferSourceLike): void
+/** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
 declare function threeWebGLTexStorage2D(target: number, levels: number, internalFormat: number, width: number, height: number): void
 /** @gea-host-inert Reads its arguments, writes GL state only; never calls back into script. */
 declare function threeWebGLTexImage3D(target: number, level: number, internalFormat: number, width: number, height: number, depth: number, format: number, type: number, values: BufferSourceLike): void
@@ -943,7 +947,10 @@ export class NativeWebGL2RenderingContext {
   }
 
   isContextLost(): boolean { return false }
-  getSupportedExtensions(): string[] { return ['EXT_texture_filter_anisotropic', 'OES_texture_float_linear', 'EXT_color_buffer_float'] }
+  getSupportedExtensions(): string[] {
+    return ['EXT_texture_filter_anisotropic', 'OES_texture_float_linear', 'EXT_color_buffer_float', 'WEBGL_compressed_texture_s3tc',
+      'WEBGL_compressed_texture_s3tc_srgb', 'EXT_texture_compression_rgtc', 'EXT_texture_compression_bptc']
+  }
 
   getExtension(name: string): WebGLExtension | null {
     // One shared shape for every supported name -- see `WebGLExtension`. The
@@ -955,7 +962,11 @@ export class NativeWebGL2RenderingContext {
       name === 'WEBGL_debug_renderer_info' ||
       name === 'OES_texture_float_linear' ||
       name === 'EXT_color_buffer_float' ||
-      name === 'EXT_color_buffer_half_float'
+      name === 'EXT_color_buffer_half_float' ||
+      name === 'WEBGL_compressed_texture_s3tc' ||
+      name === 'WEBGL_compressed_texture_s3tc_srgb' ||
+      name === 'EXT_texture_compression_rgtc' ||
+      name === 'EXT_texture_compression_bptc'
     ) {
       return new WebGLExtension()
     }
@@ -1154,8 +1165,12 @@ export class NativeWebGL2RenderingContext {
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, type: number, pixels: BufferSourceLike): void {
     threeWebGLTexSubImage2D(target, level, xoffset, yoffset, width, height, format, type, pixels)
   }
-  compressedTexImage2D(_target: number, _level: number, _internalFormat: number, _width: number, _height: number, _border: number, _data: BufferSourceLike): void {}
-  compressedTexSubImage2D(_target: number, _level: number, _xoffset: number, _yoffset: number, _width: number, _height: number, _format: number, _data: BufferSourceLike): void {}
+  compressedTexImage2D(target: number, level: number, internalFormat: number, width: number, height: number, _border: number, data: BufferSourceLike): void {
+    threeWebGLCompressedTexImage2D(target, level, internalFormat, width, height, data)
+  }
+  compressedTexSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, data: BufferSourceLike): void {
+    threeWebGLCompressedTexSubImage2D(target, level, xoffset, yoffset, width, height, format, data)
+  }
   compressedTexImage3D(_target: number, _level: number, _internalFormat: number, _width: number, _height: number, _depth: number, _border: number, _data: BufferSourceLike): void {}
   compressedTexSubImage3D(_target: number, _level: number, _xoffset: number, _yoffset: number, _zoffset: number, _width: number, _height: number, _depth: number, _format: number, _data: BufferSourceLike): void {}
   texStorage2D(target: number, levels: number, internalFormat: number, width: number, height: number): void {
