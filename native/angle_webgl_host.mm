@@ -433,6 +433,8 @@ using PFNGLTEXSUBIMAGE3DPROC = void (*)(GLenum, GLint, GLint, GLint, GLint, GLsi
 using PFNGLTEXSTORAGE3DPROC = void (*)(GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei);
 using PFNGLFRAMEBUFFERTEXTURELAYERPROC = void (*)(GLenum, GLenum, GLuint, GLint, GLint);
 using PFNGLTEXSTORAGE2DPROC = void (*)(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
+using PFNGLCOMPRESSEDTEXIMAGE2DPROC = void (*)(GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void *);
+using PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC = void (*)(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLsizei, const void *);
 using PFNGLUNIFORM1FPROC = void (*)(GLint, GLfloat);
 using PFNGLUNIFORM1FVPROC = void (*)(GLint, GLsizei, const GLfloat *);
 using PFNGLUNIFORM1IPROC = void (*)(GLint, GLint);
@@ -503,6 +505,8 @@ struct AngleWebGLState {
   PFNGLBINDBUFFERRANGEPROC glBindBufferRange = nullptr;
   PFNGLGETUNIFORMBLOCKINDEXPROC glGetUniformBlockIndex = nullptr;
   PFNGLUNIFORMBLOCKBINDINGPROC glUniformBlockBinding = nullptr;
+  void (*glPushGroupMarkerEXT)(GLsizei, const GLchar *) = nullptr;
+  void (*glPopGroupMarkerEXT)() = nullptr;
   PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
   PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer = nullptr;
   PFNGLBINDTEXTUREPROC glBindTexture = nullptr;
@@ -587,6 +591,9 @@ struct AngleWebGLState {
   PFNGLTEXPARAMETERIPROC glTexParameteri = nullptr;
   PFNGLTEXSUBIMAGE2DPROC glTexSubImage2D = nullptr;
   PFNGLTEXSTORAGE2DPROC glTexStorage2D = nullptr;
+  // Compressed uploads are optional too: a GLES without them drops the call.
+  PFNGLCOMPRESSEDTEXIMAGE2DPROC glCompressedTexImage2D = nullptr;
+  PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC glCompressedTexSubImage2D = nullptr;
   // Array/3D entry points are optional: a GLES without them still starts,
   // and uploads to those targets report GL_INVALID_OPERATION in the log.
   PFNGLTEXIMAGE3DPROC glTexImage3D = nullptr;
@@ -1045,6 +1052,8 @@ static bool loadGlSymbols() {
   gWebGL.glBindBufferRange = loadGl<PFNGLBINDBUFFERRANGEPROC>("glBindBufferRange");
   gWebGL.glGetUniformBlockIndex = loadGl<PFNGLGETUNIFORMBLOCKINDEXPROC>("glGetUniformBlockIndex");
   gWebGL.glUniformBlockBinding = loadGl<PFNGLUNIFORMBLOCKBINDINGPROC>("glUniformBlockBinding");
+  gWebGL.glPushGroupMarkerEXT = loadGl<decltype(gWebGL.glPushGroupMarkerEXT)>("glPushGroupMarkerEXT");
+  gWebGL.glPopGroupMarkerEXT = loadGl<decltype(gWebGL.glPopGroupMarkerEXT)>("glPopGroupMarkerEXT");
   LOAD_GL(glBindFramebuffer, PFNGLBINDFRAMEBUFFERPROC)
   LOAD_GL(glBindRenderbuffer, PFNGLBINDRENDERBUFFERPROC)
   LOAD_GL(glBindTexture, PFNGLBINDTEXTUREPROC)
@@ -1132,6 +1141,8 @@ static bool loadGlSymbols() {
   LOAD_GL(glTexParameteri, PFNGLTEXPARAMETERIPROC)
   LOAD_GL(glTexSubImage2D, PFNGLTEXSUBIMAGE2DPROC)
   LOAD_GL(glTexStorage2D, PFNGLTEXSTORAGE2DPROC)
+  gWebGL.glCompressedTexImage2D = loadGl<PFNGLCOMPRESSEDTEXIMAGE2DPROC>("glCompressedTexImage2D");
+  gWebGL.glCompressedTexSubImage2D = loadGl<PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC>("glCompressedTexSubImage2D");
   gWebGL.glTexImage3D = loadGl<PFNGLTEXIMAGE3DPROC>("glTexImage3D");
   gWebGL.glTexSubImage3D = loadGl<PFNGLTEXSUBIMAGE3DPROC>("glTexSubImage3D");
   gWebGL.glTexStorage3D = loadGl<PFNGLTEXSTORAGE3DPROC>("glTexStorage3D");
@@ -2440,6 +2451,12 @@ extern "C" void gea_three_webgl_uniform_block_binding(double program, double blo
   geaTrapCheck("gea_three_webgl_uniform_block_binding"); GEA_WEBGL_VOID("uniformBlockBinding");
   if (!requireGl(reinterpret_cast<const void *>(gWebGL.glUniformBlockBinding), "glUniformBlockBinding")) return;
   gWebGL.glUniformBlockBinding(asGLuint(program), asGLuint(blockIndex), asGLuint(binding)); }
+extern "C" void gea_three_webgl_push_debug_group(std::string label) {
+  geaTrapCheck("gea_three_webgl_push_debug_group"); GEA_WEBGL_VOID("pushDebugGroup");
+  if (gWebGL.glPushGroupMarkerEXT) gWebGL.glPushGroupMarkerEXT(static_cast<GLsizei>(label.size()), label.c_str()); }
+extern "C" void gea_three_webgl_pop_debug_group() {
+  geaTrapCheck("gea_three_webgl_pop_debug_group"); GEA_WEBGL_VOID("popDebugGroup");
+  if (gWebGL.glPopGroupMarkerEXT) gWebGL.glPopGroupMarkerEXT(); }
 extern "C" void gea_three_webgl_draw_elements_instanced(double mode, double count, double type, double offset, double instanceCount) {
   geaTrapCheck("gea_three_webgl_draw_elements_instanced"); GEA_WEBGL_VOID("drawElementsInstanced");
   gWebGL.glDrawElementsInstanced(asGLenum(mode), asGLsizei(count), asGLenum(type),
@@ -2686,6 +2703,18 @@ extern "C" void gea_three_webgl_tex_sub_image_3d_bytes(double target, double lev
   GEA_WEBGL_VOID("texSubImage3DBytes");
   if (!requireGl(reinterpret_cast<const void *>(gWebGL.glTexSubImage3D), "glTexSubImage3D")) return;
   gWebGL.glTexSubImage3D(asGLenum(target), asGLint(level), asGLint(xoffset), asGLint(yoffset), asGLint(zoffset), asGLsizei(width), asGLsizei(height), asGLsizei(depth), asGLenum(format), asGLenum(type), bytes);
+}
+
+extern "C" void gea_three_webgl_compressed_tex_image_2d_bytes(double target, double level, double internalFormat, double width, double height, const void* bytes, double byteLength) {
+  GEA_WEBGL_VOID("compressedTexImage2DBytes");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glCompressedTexImage2D), "glCompressedTexImage2D")) return;
+  gWebGL.glCompressedTexImage2D(asGLenum(target), asGLint(level), asGLenum(internalFormat), asGLsizei(width), asGLsizei(height), 0, asGLsizei(byteLength), bytes);
+}
+
+extern "C" void gea_three_webgl_compressed_tex_sub_image_2d_bytes(double target, double level, double xoffset, double yoffset, double width, double height, double format, const void* bytes, double byteLength) {
+  GEA_WEBGL_VOID("compressedTexSubImage2DBytes");
+  if (!requireGl(reinterpret_cast<const void *>(gWebGL.glCompressedTexSubImage2D), "glCompressedTexSubImage2D")) return;
+  gWebGL.glCompressedTexSubImage2D(asGLenum(target), asGLint(level), asGLint(xoffset), asGLint(yoffset), asGLsizei(width), asGLsizei(height), asGLenum(format), asGLsizei(byteLength), bytes);
 }
 
 extern "C" void gea_three_webgl_tex_storage_3d(double target, double levels, double internalFormat, double width, double height, double depth) {

@@ -16,6 +16,9 @@ export const nativeUploadFunctions = [
   ['threeWebGLTexImage3D', 'gea_three_webgl_tex_image_3d_native', ['target', 'level', 'internalFormat', 'width', 'height', 'depth', 'format', 'type'], 'gea_three_webgl_tex_image_3d_bytes', ['target', 'level', 'internalFormat', 'width', 'height', 'depth', 'format', 'type'], textureElementKind],
   ['threeWebGLTexSubImage3D', 'gea_three_webgl_tex_sub_image_3d_native', ['target', 'level', 'xoffset', 'yoffset', 'zoffset', 'width', 'height', 'depth', 'format', 'type'], 'gea_three_webgl_tex_sub_image_3d_bytes', ['target', 'level', 'xoffset', 'yoffset', 'zoffset', 'width', 'height', 'depth', 'format', 'type'], textureElementKind],
   ['threeWebGLTexSubImage2D', 'gea_three_webgl_tex_sub_image_2d_native', ['target', 'level', 'xoffset', 'yoffset', 'width', 'height', 'format', 'type'], 'gea_three_webgl_tex_sub_image_2d_bytes', ['target', 'level', 'xoffset', 'yoffset', 'width', 'height', 'format', 'type'], textureElementKind],
+  // Compressed blocks are opaque bytes.
+  ['threeWebGLCompressedTexImage2D', 'gea_three_webgl_compressed_tex_image_2d_native', ['target', 'level', 'internalFormat', 'width', 'height'], 'gea_three_webgl_compressed_tex_image_2d_bytes', ['target', 'level', 'internalFormat', 'width', 'height'], '4'],
+  ['threeWebGLCompressedTexSubImage2D', 'gea_three_webgl_compressed_tex_sub_image_2d_native', ['target', 'level', 'xoffset', 'yoffset', 'width', 'height', 'format'], 'gea_three_webgl_compressed_tex_sub_image_2d_bytes', ['target', 'level', 'xoffset', 'yoffset', 'width', 'height', 'format'], '4'],
 ].map(([name, binding, parameters, raw, rawParameters, kind, range]) => {
   const declaration = `extern "C" void ${raw}(${rawParameters.map(p => `double ${p}`).join(', ')}, const void* bytes, double byteLength);
   template <typename Source> inline void ${binding}(${parameters.map(p => `double ${p}`).join(', ')}, const Source& values${range ? ', double sourceOffset, double length' : ''}) {
