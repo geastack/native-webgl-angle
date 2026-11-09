@@ -139,6 +139,18 @@ inline double gea_three_resource_read_native(std::string name, const gea::Ref<ge
   ['threeWebGLTimerResult','gea_three_webgl_timer_result','double','extern "C" double gea_three_webgl_timer_result(double);'],
   ['threeWebGLRenderbufferStorageMultisample','gea_three_webgl_renderbuffer_storage_multisample','void','extern "C" void gea_three_webgl_renderbuffer_storage_multisample(double,double,double,double,double);'],
   [
+    "threeWebGLPushDebugGroup",
+    "gea_three_webgl_push_debug_group",
+    "void",
+    'extern "C" void gea_three_webgl_push_debug_group(std::string label);',
+  ],
+  [
+    "threeWebGLPopDebugGroup",
+    "gea_three_webgl_pop_debug_group",
+    "void",
+    'extern "C" void gea_three_webgl_pop_debug_group();',
+  ],
+  [
     "threeNativeProfilePhase",
     "gea_three_native_profile_phase",
     "void",
@@ -2123,8 +2135,29 @@ const transformSource = ({ fileName, text }) => {
   if (normalized.endsWith("/three/src/renderers/WebGLRenderer.js")) {
     transformed =
       // Forward slashes: a Windows path's backslashes would be escapes in this literal.
-      `import { nativeProfilePhase } from '${fileURLToPath(new URL("./src/nativeWebGLHost.ts", import.meta.url)).replaceAll("\\", "/")}';\n` +
+      `import { nativeProfilePhase, nativePushDebugGroup, nativePopDebugGroup } from '${fileURLToPath(new URL("./src/nativeWebGLHost.ts", import.meta.url)).replaceAll("\\", "/")}';\n` +
       transformed;
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tif ( _isContextLost === true ) return;\n",
+      "\t\t\tif ( _isContextLost === true ) return;\n\n\t\t\tnativePushDebugGroup( scene.name !== '' ? scene.name : ( camera.name !== '' ? camera.name : scene.type ) );\n",
+      fileName,
+      "WebGLRenderer render debug group begin",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\t\t_nodesHandler.renderEnd();\n\n\t\t\t}\n\n\t\t};",
+      "\t\t\t\t_nodesHandler.renderEnd();\n\n\t\t\t}\n\n\t\t\tnativePopDebugGroup();\n\n\t\t};",
+      fileName,
+      "WebGLRenderer render debug group end",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\t\tif ( opaqueObjects.length > 0 ) renderObjects( opaqueObjects, scene, camera );\n\t\t\tif ( transmissiveObjects.length > 0 ) renderObjects( transmissiveObjects, scene, camera );\n\t\t\tif ( transparentObjects.length > 0 ) renderObjects( transparentObjects, scene, camera );\n",
+      "\t\t\tif ( opaqueObjects.length > 0 ) {\n\n\t\t\t\tnativePushDebugGroup( 'opaque' );\n\t\t\t\trenderObjects( opaqueObjects, scene, camera );\n\t\t\t\tnativePopDebugGroup();\n\n\t\t\t}\n\n\t\t\tif ( transmissiveObjects.length > 0 ) {\n\n\t\t\t\tnativePushDebugGroup( 'transmissive' );\n\t\t\t\trenderObjects( transmissiveObjects, scene, camera );\n\t\t\t\tnativePopDebugGroup();\n\n\t\t\t}\n\n\t\t\tif ( transparentObjects.length > 0 ) {\n\n\t\t\t\tnativePushDebugGroup( 'transparent' );\n\t\t\t\trenderObjects( transparentObjects, scene, camera );\n\t\t\t\tnativePopDebugGroup();\n\n\t\t\t}\n",
+      fileName,
+      "WebGLRenderer render list debug groups",
+    );
     transformed = replaceOne(
       transformed,
       "if ( scene.matrixWorldAutoUpdate === true ) scene.updateMatrixWorld();",
@@ -6426,6 +6459,23 @@ ${wiringText.replace(/\t\t\t\t/g, "\t\t\t\t")}
     );
   }
   if (normalized.endsWith("/three/src/renderers/webgl/WebGLShadowMap.js")) {
+    transformed =
+      `import { nativePushDebugGroup, nativePopDebugGroup } from '${fileURLToPath(new URL("./src/nativeWebGLHost.ts", import.meta.url)).replaceAll("\\", "/")}';\n` +
+      transformed;
+    transformed = replaceOne(
+      transformed,
+      "\t\tif ( lights.length === 0 ) return;\n",
+      "\t\tif ( lights.length === 0 ) return;\n\n\t\tnativePushDebugGroup( 'shadow map' );\n",
+      fileName,
+      "WebGLShadowMap debug group begin",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t\tscope.needsUpdate = false;\n\n\t\trenderer.setRenderTarget( currentRenderTarget, activeCubeFace, activeMipmapLevel );\n",
+      "\t\tscope.needsUpdate = false;\n\n\t\trenderer.setRenderTarget( currentRenderTarget, activeCubeFace, activeMipmapLevel );\n\n\t\tnativePopDebugGroup();\n",
+      fileName,
+      "WebGLShadowMap debug group end",
+    );
     // An app that replaces `shadowMap.render` (the browser's cached sun shadow)
     // cannot do so natively: the field holds a `this`-bound function expression
     // no app function converts to. This hook is an ordinary function-typed
