@@ -349,42 +349,86 @@ export function isUniformNumberArray( value ) {
 
 }
 
-/** @param {NativeUniformValue} value @return {value is Vector2[]} */
-function isVector2Array( value ) {
+/**
+ * One element of a uniform array whose first element is the given kind. Read
+ * through \`Array.isArray\` and \`instanceof\` on the element itself rather than
+ * through the value narrowed to that array type: the value is stored as the
+ * uniform union, and claiming one array arm for it is an array-to-array
+ * conversion with no runtime form.
+ */
 
-\treturn Array.isArray( value ) && value.length > 0 && value[ 0 ] instanceof Vector2;
+/** @param {NativeUniformValue} value @param {number} index @return {Vector2} */
+function vector2ArrayElement( value, index ) {
 
-}
+\tif ( Array.isArray( value ) ) {
 
-/** @param {NativeUniformValue} value @return {value is Vector3[]} */
-function isVector3Array( value ) {
+\t\tconst element = value[ index ];
 
-\treturn Array.isArray( value ) && value.length > 0 && value[ 0 ] instanceof Vector3;
+\t\tif ( element instanceof Vector2 ) return element;
 
-}
+\t}
 
-/** @param {NativeUniformValue} value @return {value is Vector4[]} */
-function isVector4Array( value ) {
-
-\treturn Array.isArray( value ) && value.length > 0 && value[ 0 ] instanceof Vector4;
-
-}
-
-/** @param {NativeUniformValue} value @return {value is Matrix4[]} */
-function isMatrix4Array( value ) {
-
-\treturn Array.isArray( value ) && value.length > 0 && value[ 0 ] instanceof Matrix4;
+\tthrow new Error( 'THREE.UniformsUtils: a uniform array mixes Vector2 with other values.' );
 
 }
 
-/** @param {NativeUniformValue} value @return {value is Array<Texture|null>} */
-export function isUniformTextureArray( value ) {
+/** @param {NativeUniformValue} value @param {number} index @return {Vector3} */
+function vector3ArrayElement( value, index ) {
 
-\tif ( ! Array.isArray( value ) || value.length === 0 ) return false;
+\tif ( Array.isArray( value ) ) {
 
-\tconst first = value[ 0 ];
+\t\tconst element = value[ index ];
 
-\treturn first === null || first instanceof Texture;
+\t\tif ( element instanceof Vector3 ) return element;
+
+\t}
+
+\tthrow new Error( 'THREE.UniformsUtils: a uniform array mixes Vector3 with other values.' );
+
+}
+
+/** @param {NativeUniformValue} value @param {number} index @return {Vector4} */
+function vector4ArrayElement( value, index ) {
+
+\tif ( Array.isArray( value ) ) {
+
+\t\tconst element = value[ index ];
+
+\t\tif ( element instanceof Vector4 ) return element;
+
+\t}
+
+\tthrow new Error( 'THREE.UniformsUtils: a uniform array mixes Vector4 with other values.' );
+
+}
+
+/** @param {NativeUniformValue} value @param {number} index @return {Matrix4} */
+function matrix4ArrayElement( value, index ) {
+
+\tif ( Array.isArray( value ) ) {
+
+\t\tconst element = value[ index ];
+
+\t\tif ( element instanceof Matrix4 ) return element;
+
+\t}
+
+\tthrow new Error( 'THREE.UniformsUtils: a uniform array mixes Matrix4 with other values.' );
+
+}
+
+/** @param {NativeUniformValue} value @param {number} index @return {Texture|null} */
+function textureArrayElement( value, index ) {
+
+\tif ( Array.isArray( value ) ) {
+
+\t\tconst element = value[ index ];
+
+\t\tif ( element === null || element instanceof Texture ) return element;
+
+\t}
+
+\tthrow new Error( 'THREE.UniformsUtils: a uniform array mixes textures with other values.' );
 
 }
 
@@ -423,63 +467,70 @@ export function cloneUniformValue( value ) {
 
 \tif ( isUniformNumberArray( value ) ) return value.slice();
 
-\tif ( isVector2Array( value ) ) {
+\tif ( Array.isArray( value ) && value.length > 0 ) {
 
-\t\t/** @type {Vector2[]} */
-\t\tconst cloned = [];
+\t\tconst first = value[ 0 ];
+\t\tconst length = value.length;
 
-\t\tfor ( let i = 0, l = value.length; i < l; i ++ ) cloned.push( value[ i ].clone() );
+\t\tif ( first instanceof Vector2 ) {
 
-\t\treturn cloned;
+\t\t\t/** @type {Vector2[]} */
+\t\t\tconst cloned = [];
 
-\t}
+\t\t\tfor ( let i = 0; i < length; i ++ ) cloned.push( vector2ArrayElement( value, i ).clone() );
 
-\tif ( isVector3Array( value ) ) {
-
-\t\t/** @type {Vector3[]} */
-\t\tconst cloned = [];
-
-\t\tfor ( let i = 0, l = value.length; i < l; i ++ ) cloned.push( value[ i ].clone() );
-
-\t\treturn cloned;
-
-\t}
-
-\tif ( isVector4Array( value ) ) {
-
-\t\t/** @type {Vector4[]} */
-\t\tconst cloned = [];
-
-\t\tfor ( let i = 0, l = value.length; i < l; i ++ ) cloned.push( value[ i ].clone() );
-
-\t\treturn cloned;
-
-\t}
-
-\tif ( isMatrix4Array( value ) ) {
-
-\t\t/** @type {Matrix4[]} */
-\t\tconst cloned = [];
-
-\t\tfor ( let i = 0, l = value.length; i < l; i ++ ) cloned.push( value[ i ].clone() );
-
-\t\treturn cloned;
-
-\t}
-
-\tif ( isUniformTextureArray( value ) ) {
-
-\t\t/** @type {Array<Texture|null>} */
-\t\tconst cloned = [];
-
-\t\tfor ( let i = 0, l = value.length; i < l; i ++ ) {
-
-\t\t\tconst texture = value[ i ];
-\t\t\tcloned.push( texture === null ? null : texture.clone() );
+\t\t\treturn cloned;
 
 \t\t}
 
-\t\treturn cloned;
+\t\tif ( first instanceof Vector3 ) {
+
+\t\t\t/** @type {Vector3[]} */
+\t\t\tconst cloned = [];
+
+\t\t\tfor ( let i = 0; i < length; i ++ ) cloned.push( vector3ArrayElement( value, i ).clone() );
+
+\t\t\treturn cloned;
+
+\t\t}
+
+\t\tif ( first instanceof Vector4 ) {
+
+\t\t\t/** @type {Vector4[]} */
+\t\t\tconst cloned = [];
+
+\t\t\tfor ( let i = 0; i < length; i ++ ) cloned.push( vector4ArrayElement( value, i ).clone() );
+
+\t\t\treturn cloned;
+
+\t\t}
+
+\t\tif ( first instanceof Matrix4 ) {
+
+\t\t\t/** @type {Matrix4[]} */
+\t\t\tconst cloned = [];
+
+\t\t\tfor ( let i = 0; i < length; i ++ ) cloned.push( matrix4ArrayElement( value, i ).clone() );
+
+\t\t\treturn cloned;
+
+\t\t}
+
+\t\tif ( first === null || first instanceof Texture ) {
+
+\t\t\t/** @type {Array<Texture|null>} */
+\t\t\tconst cloned = [];
+
+\t\t\tfor ( let i = 0; i < length; i ++ ) {
+
+\t\t\t\tconst texture = textureArrayElement( value, i );
+\t\t\t\tcloned.push( texture === null ? null : texture.clone() );
+
+\t\t\t}
+
+\t\t\treturn cloned;
+
+\t\t}
 
 \t}
 
@@ -856,8 +907,7 @@ function ${name}( gl, v, textures ) {
 
 \t}
 
-\tconst list = requireTextureArray( v );
-\tconst n = list.length;
+\tconst n = requireTextureArrayLength( v );
 
 \tconst units = allocTexUnits( manager, n );
 
@@ -887,7 +937,7 @@ ${
 }
 \tfor ( let i = 0; i !== n; ++ i ) {
 
-\t\tconst texture = list[ i ];
+\t\tconst texture = textureArrayElement( v, i );
 \t\tmanager.${setter}( texture === null ? ${shadowAware ? 'emptyTexture2D' : empty} : texture, units[ i ] );
 
 \t}
@@ -1033,7 +1083,7 @@ import { Matrix4 } from '../../math/Matrix4.js';
 import { Vector2 } from '../../math/Vector2.js';
 import { Vector3 } from '../../math/Vector3.js';
 import { Vector4 } from '../../math/Vector4.js';
-import { isUniformNumberArray, isUniformTextureArray } from '../shaders/UniformsUtils.js';
+import { isUniformNumberArray } from '../shaders/UniformsUtils.js';
 import {
 ${nativeLightUniformClassNames.map((name) => `\t${name},`).join('\n')}
 } from '../shaders/UniformsLib.js';
@@ -1124,10 +1174,39 @@ function requireUintUniformArray( value ) {
 
 }
 
-/** @param {NativeUniformValue} value @return {Array<Texture|null>} */
-function requireTextureArray( value ) {
+/**
+ * A sampler array value is read element by element, never returned as a
+ * narrowed \`Array<Texture|null>\`: a call site can hand the setter a value whose
+ * static carrier is another array arm (a \`number[]\` passed to \`setValue\` by
+ * name), and claiming that array for the texture arm is an array-to-array
+ * conversion with no runtime form. Validated up front, as before, so a value
+ * that is not a texture array throws before any texture unit is allocated.
+ * @param {NativeUniformValue} value @return {number}
+ */
+function requireTextureArrayLength( value ) {
 
-\tif ( isUniformTextureArray( value ) ) return value;
+\tif ( Array.isArray( value ) && value.length > 0 ) {
+
+\t\tconst first = value[ 0 ];
+
+\t\tif ( first === null || first instanceof Texture ) return value.length;
+
+\t}
+
+\tthrow new Error( 'THREE.WebGLUniforms: sampler array uniform value must be an array of textures.' );
+
+}
+
+/** @param {NativeUniformValue} value @param {number} index @return {Texture|null} */
+function textureArrayElement( value, index ) {
+
+\tif ( Array.isArray( value ) ) {
+
+\t\tconst element = value[ index ];
+
+\t\tif ( element === null || element instanceof Texture ) return element;
+
+\t}
 
 \tthrow new Error( 'THREE.WebGLUniforms: sampler array uniform value must be an array of textures.' );
 
