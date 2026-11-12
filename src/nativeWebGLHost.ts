@@ -148,7 +148,7 @@ export function nativeWebGLBindRenderbuffer(target: number, renderbuffer: number
 export function nativeWebGLDeleteRenderbuffer(renderbuffer: number): void { threeWebGLDeleteRenderbuffer(renderbuffer) }
 export function nativeWebGLRenderbufferStorage(target: number, internalFormat: number, width: number, height: number): void { threeWebGLRenderbufferStorage(target, internalFormat, width, height) }
 export function nativeWebGLFramebufferRenderbuffer(target: number, attachment: number, renderbuffertarget: number, renderbuffer: number): void { threeWebGLFramebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer) }
-export function nativeWebGLDrawBuffers(attachment: number): void { threeWebGLDrawBuffers(attachment) }
+export function nativeWebGLDrawBuffers(count: number, a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number): void { threeWebGLDrawBuffers(count, a0, a1, a2, a3, a4, a5, a6, a7) }
 
 export function nativeWebGLClearColor(r: number, g: number, b: number, a: number): void { threeWebGLClearColor(r, g, b, a) }
 export function nativeWebGLClear(mask: number): void { threeWebGLClear(mask) }
@@ -303,7 +303,7 @@ declare function threeWebGLRenderbufferStorage(target: number, internalFormat: n
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
 declare function threeWebGLFramebufferRenderbuffer(target: number, attachment: number, renderbuffertarget: number, renderbuffer: number): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */
-declare function threeWebGLDrawBuffers(attachment: number): void
+declare function threeWebGLDrawBuffers(count: number, a0: number, a1: number, a2: number, a3: number, a4: number, a5: number, a6: number, a7: number): void
 /** @gea-host-inert Copies scalar arguments into GL state; retains no script references and invokes no script. */
 declare function threeWebGLClearColor(r: number, g: number, b: number, a: number): void
 /** @gea-host-inert Native state only; retains no script references and invokes no script. */

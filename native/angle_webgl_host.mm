@@ -2327,8 +2327,11 @@ extern "C" void gea_three_webgl_renderbuffer_storage(double target, double inter
   geaTrapCheck("gea_three_webgl_renderbuffer_storage"); GEA_WEBGL_VOID("renderbufferStorage"); gWebGL.glRenderbufferStorage(asGLenum(target), asGLenum(internalFormat), asGLsizei(width), asGLsizei(height)); }
 extern "C" void gea_three_webgl_framebuffer_renderbuffer(double target, double attachment, double renderbuffertarget, double renderbuffer) {
   geaTrapCheck("gea_three_webgl_framebuffer_renderbuffer"); GEA_WEBGL_VOID("framebufferRenderbuffer"); gWebGL.glFramebufferRenderbuffer(asGLenum(target), asGLenum(attachment), asGLenum(renderbuffertarget), asGLuint(renderbuffer)); }
-extern "C" void gea_three_webgl_draw_buffers(double attachment) {
-  geaTrapCheck("gea_three_webgl_draw_buffers"); GEA_WEBGL_VOID("drawBuffers"); const GLenum glAttachment = asGLenum(attachment); gWebGL.glDrawBuffers(1, &glAttachment); }
+extern "C" void gea_three_webgl_draw_buffers(double count, double a0, double a1, double a2, double a3, double a4, double a5, double a6, double a7) {
+  geaTrapCheck("gea_three_webgl_draw_buffers"); GEA_WEBGL_VOID("drawBuffers");
+  const GLenum attachments[8] = {asGLenum(a0), asGLenum(a1), asGLenum(a2), asGLenum(a3), asGLenum(a4), asGLenum(a5), asGLenum(a6), asGLenum(a7)};
+  const GLsizei n = std::max<GLsizei>(0, std::min<GLsizei>(asGLsizei(count), 8));
+  gWebGL.glDrawBuffers(n, attachments); }
 
 extern "C" void gea_three_webgl_clear_color(double r, double g, double b, double a) {
   geaTrapCheck("gea_three_webgl_clear_color"); GEA_WEBGL_VOID("clearColor");
