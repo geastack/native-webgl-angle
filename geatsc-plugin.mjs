@@ -678,7 +678,7 @@ inline double gea_three_resource_read_native(std::string name, const gea::Ref<ge
     "threeWebGLDrawBuffers",
     "gea_three_webgl_draw_buffers",
     "void",
-    'extern "C" void gea_three_webgl_draw_buffers(double attachment);',
+    'extern "C" void gea_three_webgl_draw_buffers(double count, double a0, double a1, double a2, double a3, double a4, double a5, double a6, double a7);',
   ],
 
   [
