@@ -1213,7 +1213,12 @@ export class NativeWebGL2RenderingContext {
   framebufferTextureLayer(target: number, attachment: number, texture: NativeHandle | null, level: number, layer: number): void {
     threeWebGLFramebufferTextureLayer(target, attachment, nullableNativeHandle(texture), level, layer)
   }
-  drawBuffers(buffers: number[]): void { nativeWebGLDrawBuffers(buffers[0] ?? this.COLOR_ATTACHMENT0) }
+  /** Every listed buffer reaches GL (up to 8, the MRT limit the host passes), so multiple render targets write all their attachments. */
+  drawBuffers(buffers: number[]): void {
+    const count = Math.min(buffers.length, 8)
+    const at = (index: number): number => index < count ? buffers[index] : this.NONE
+    nativeWebGLDrawBuffers(count, at(0), at(1), at(2), at(3), at(4), at(5), at(6), at(7))
+  }
 
   clearColor(r: number, g: number, b: number, a: number): void { nativeWebGLClearColor(r, g, b, a) }
   clear(mask: number): void { nativeWebGLClear(mask) }
