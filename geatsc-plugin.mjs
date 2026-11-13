@@ -26,7 +26,7 @@ const renderGroupType =
   "({ start: number, count: number, materialIndex?: number } | null)";
 const nativeRenderItemType = (prefix) =>
   `{ id: number, object: import('${prefix}core/Object3D.js').Object3D, geometry: import('${prefix}core/BufferGeometry.js').BufferGeometry, ` +
-  `material: import('${prefix}materials/Material.js').Material, materialVariant: number, groupOrder: number, renderOrder: number, z: number, group: ${renderGroupType} }`;
+  `material: import('${prefix}materials/Material.js').Material, materialVariant: number, programId: number, groupOrder: number, renderOrder: number, z: number, group: ${renderGroupType} }`;
 const nativeWebGLReceiverIdentity = Object.freeze([
   Object.freeze({
     moduleSpecifier: nativeWebGLSourceModule,
@@ -5733,6 +5733,7 @@ function requireWebGLStateTextureImageSource( value ) {
 \t\t\t\tgeometry: geometry,
 \t\t\t\tmaterial: material,
 \t\t\t\tmaterialVariant: materialVariant( object ),
+\t\t\t\tprogramId: programId( material ),
 \t\t\t\tgroupOrder: groupOrder,
 \t\t\t\trenderOrder: object.renderOrder,
 \t\t\t\tz: z,
@@ -5749,6 +5750,7 @@ function requireWebGLStateTextureImageSource( value ) {
 \t\t\trenderItem.geometry = geometry;
 \t\t\trenderItem.material = material;
 \t\t\trenderItem.materialVariant = materialVariant( object );
+\t\t\trenderItem.programId = programId( material );
 \t\t\trenderItem.groupOrder = groupOrder;
 \t\t\trenderItem.renderOrder = object.renderOrder;
 \t\t\trenderItem.z = z;
@@ -5758,6 +5760,47 @@ function requireWebGLStateTextureImageSource( value ) {
       fileName,
       "WebGLRenderLists bounds-proven render-item cache read",
     );
+    // Opaque draws of one shader program run together (painterSortStable orders by the program the material
+    // last drew with, then by material id): every program switch costs setProgram its camera uniforms and the
+    // program binding, and the materials of one program are otherwise interleaved by their ids.
+    transformed = replaceOne(
+      transformed,
+      "function WebGLRenderList() {",
+      "/** @param {ReturnType<typeof import('./WebGLProperties.js').WebGLProperties> | null} [properties] */\nfunction WebGLRenderList( properties = null ) {",
+      fileName,
+      "WebGLRenderList property store",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\tfunction getNextRenderItem( object, geometry, material, groupOrder, z, group ) {",
+      `\t/** The id of the program the material last drew with, -1 before its first draw. @param {import('../../materials/Material.js').Material} material @return {number} */
+\tfunction programId( material ) {
+
+\t\tif ( properties === null ) return - 1;
+\t\tconst program = properties.get( material ).currentProgram;
+\t\treturn program === undefined || program === null ? - 1 : program.id;
+
+\t}
+
+\tfunction getNextRenderItem( object, geometry, material, groupOrder, z, group ) {`,
+      fileName,
+      "WebGLRenderList program id",
+    );
+    transformed = replaceOne(
+      transformed,
+      "\t} else if ( a.material.id !== b.material.id ) {",
+      "\t} else if ( a.programId !== b.programId ) {\n\n\t\treturn a.programId - b.programId;\n\n\t} else if ( a.material.id !== b.material.id ) {",
+      fileName,
+      "WebGLRenderLists program-first opaque order",
+    );
+    transformed = replaceOne(
+      transformed,
+      "function WebGLRenderLists() {",
+      "/** @param {ReturnType<typeof import('./WebGLProperties.js').WebGLProperties> | null} [properties] */\nfunction WebGLRenderLists( properties = null ) {",
+      fileName,
+      "WebGLRenderLists property store",
+    );
+    transformed = transformed.replaceAll("new WebGLRenderList()", "new WebGLRenderList( properties )");
     transformed = replaceOne(
       transformed,
       "\tfunction sort( customOpaqueSort, customTransparentSort, reversedDepth ) {",
@@ -6401,6 +6444,14 @@ function WebGLLights(`,
     );
   }
   if (normalized.endsWith("/three/src/renderers/WebGLRenderer.js")) {
+    // The render lists read each material's current program for their opaque order (see WebGLRenderLists).
+    transformed = replaceOne(
+      transformed,
+      "\t\t\trenderLists = new WebGLRenderLists();",
+      "\t\t\trenderLists = new WebGLRenderLists( properties );",
+      fileName,
+      "WebGLRenderer render lists property store",
+    );
     transformed = replaceOne(
       transformed,
       "\t\t\t\t\tmarkUniformsLightsNeedsUpdate( m_uniforms, refreshLights );",
