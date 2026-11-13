@@ -26,6 +26,20 @@ list.sort((a, b) => {
 }, null, false)
 assert.ok(calls > 0)
 assert.deepEqual(list.opaque.map(item => item.id), [3, 2, 1])
+// Opaque draws group by the program each material last drew with, then by material id; a material that has
+// not drawn yet (no program) sorts first.
+const programs = new Map()
+const byProgram = WebGLRenderList({ get: (m) => ({ currentProgram: programs.get(m) }) })
+const red = { id: 1, transmission: 0, transparent: false }
+const blue = { id: 2, transmission: 0, transparent: false }
+const green = { id: 3, transmission: 0, transparent: false }
+const fresh = { id: 4, transmission: 0, transparent: false }
+programs.set(red, { id: 7 })
+programs.set(blue, { id: 5 })
+programs.set(green, { id: 7 })
+for (const [id, m] of [[1, red], [2, blue], [3, green], [4, fresh]]) byProgram.push({ id, renderOrder: 0 }, geometry, m, 0, 0, null)
+byProgram.sort(null, null, false)
+assert.deepEqual(byProgram.opaque.map(item => item.id), [4, 2, 1, 3])
 const rendererFile = path.join(root, 'renderers/WebGLRenderer.js')
 const renderer = transform({ fileName: rendererFile, text: fs.readFileSync(rendererFile, 'utf8') })
 assert.doesNotMatch(renderer, /a: any, b: any/)
