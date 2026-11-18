@@ -21,7 +21,13 @@
 #elif defined(__APPLE__)
 #include <TargetConditionals.h>
 #if TARGET_OS_OSX
+// The AppKit bindings exist only when the program uses them from TypeScript
+// (attachNativeWebGL); a program attached by the host extension
+// (appkit_webgl_surface.mm) builds without them.
+#if __has_include("gea/apple/native_bridge.h")
 #include "gea/apple/native_bridge.h"
+#define GEA_WEBGL_APPKIT_BINDINGS 1
+#endif
 
 #import <AppKit/AppKit.h>
 #endif
@@ -1219,8 +1225,11 @@ static bool loadGlSymbols() {
 extern "C" bool gea_three_webgl_attach_uwp(
   void *nativeWindow,
 #else
-extern "C" bool gea_three_webgl_attach(
-  gea::apple::AppKit::NSView view,
+// Attaches into `containerView`: from the program (gea_three_webgl_attach) or
+// from the AppKit host extension (appkit_webgl_surface.mm), which attaches to
+// the window's root view before the program runs, as the UIKit one does.
+static bool attachAppKitView(
+  NSView *containerView,
 #endif
   double width,
   double height,
@@ -1381,7 +1390,7 @@ extern "C" bool gea_three_webgl_attach(
     return false;
   }
 #else
-  NSView *containerView = (__bridge NSView *)gea::apple::objc::object(view.handle);
+  if (!containerView) return false;
   containerView.wantsLayer = YES;
   containerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   [containerView layoutSubtreeIfNeeded];
@@ -1446,6 +1455,18 @@ extern "C" bool gea_three_webgl_attach(
   smokeLog("[native-webgl-angle] context attached, EGL %d.%d at %dx%d", major, minor, gWebGL.widthPx, gWebGL.heightPx);
   return true;
 }
+
+#if GEA_WEBGL_APPKIT && defined(GEA_WEBGL_APPKIT_BINDINGS)
+extern "C" bool gea_three_webgl_attach(gea::apple::AppKit::NSView view, double width, double height, double devicePixelRatio) {
+  return attachAppKitView((__bridge NSView *)gea::apple::objc::object(view.handle), width, height, devicePixelRatio);
+}
+#endif
+
+#if GEA_WEBGL_APPKIT
+extern "C" bool gea_three_webgl_attach_appkit(void *view, double width, double height, double devicePixelRatio) {
+  return attachAppKitView((__bridge NSView *)view, width, height, devicePixelRatio);
+}
+#endif
 
 extern "C" double gea_three_webgl_sync_size(double fallbackAspect) {
   if (nativeFrameProfileEnabled()) {
