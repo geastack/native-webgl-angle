@@ -661,7 +661,15 @@ static AngleWebGLState gWebGL;
 // Vertical sync as the program chose it (nativeWebGLSetVsync): 1 on, 0 off, -1 not chosen
 // (then GEA_ANGLE_SWAP_INTERVAL, else 0; see makeCurrent).
 static int gVsyncChoice = -1;
-extern "C" void gea_three_webgl_set_vsync(double on) { gVsyncChoice = on != 0 ? 1 : 0; }
+extern "C" void gea_three_webgl_set_vsync(double on) {
+  gVsyncChoice = on != 0 ? 1 : 0;
+#if GEA_WEBGL_APPKIT
+  // Swap interval 0 alone is not enough on a desktop window: the host owns the
+  // CAMetalLayer, and while it syncs to the display nextDrawable blocks each
+  // present until the next refresh, holding the loop at the refresh rate.
+  if (gWebGL.metalLayer) gWebGL.metalLayer.displaySyncEnabled = gVsyncChoice != 0;
+#endif
+}
 static GLenum hostReadbackError = 0;
 static std::chrono::steady_clock::time_point gProfileSizeSync;
 static bool gProfileSizeSyncPending = false;
@@ -950,6 +958,7 @@ static void configureMetalLayerForPresentation(CAMetalLayer *layer) {
   if (!layer) return;
   layer.allowsNextDrawableTimeout = NO;
   layer.maximumDrawableCount = 3;
+  if (gVsyncChoice == 0) layer.displaySyncEnabled = NO;
 }
 
 #else
