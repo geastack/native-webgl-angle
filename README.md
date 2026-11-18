@@ -83,6 +83,27 @@ the app names a directory with `gea_three_audio_set_directory_uwp`.
 
 The bridge implementation itself lives here.
 
+### tvOS and iOS
+
+Nothing to configure: install the package, use it, and run
+`gea build --target tvos` (or `ios`). This package's `gea-native.json` gives
+the iOS and tvOS targets its host, its UIKit surface (`uikit_webgl_surface.mm`,
+a `CAMetalLayer` view filling the window, attached before the program's top
+level runs) and a static ANGLE, which those platforms need because they cannot
+load a dynamic one.
+
+The target builds that ANGLE on your Mac the first time an app needs it, from
+WebKit's copy of ANGLE (Metal backend) at a pinned commit
+(`tools/angle-apple/build.sh`), and caches it in `~/.geastack/cache`: about
+150 MB of WebKit sources and 10-15 minutes, once per platform (device or
+simulator); every later build and every other app reuses it. It needs Xcode,
+but not its optional Metal toolchain: ANGLE's internal shaders compile from
+source when the app starts. The archive targets tvOS and iOS 17.
+
+Input is the app's own (on tvOS, a game controller). ANGLE is BSD-licensed:
+the build copies its notices into the app bundle as `ANGLE-NOTICES.txt`;
+show them in the app's credits or about screen.
+
 ## Direction
 
 The current TS facade still routes many WebGL calls through transitional

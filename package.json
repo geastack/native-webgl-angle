@@ -43,7 +43,8 @@
     "test/batched-render-scene.ts",
     "test/auto-instanced-render-scene.ts",
     "geatsc-plugin-readback.mjs",
-    "gea-native.json"
+    "gea-native.json",
+    "tools/angle-apple"
   ],
   "publishConfig": {
     "access": "public",
