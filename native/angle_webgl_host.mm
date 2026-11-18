@@ -783,7 +783,18 @@ static Fn loadSymbol(void *library, const char *name) {
 #elif defined(_WIN32)
   return reinterpret_cast<Fn>(GetProcAddress(static_cast<HMODULE>(library), name));
 #else
-  return reinterpret_cast<Fn>(dlsym(library, name));
+  // dlsym on a handle also searches the library's dependencies. A GLES
+  // implementation that links AppKit drags in the system libGL, which exports
+  // the same gl* names; a symbol the implementation does not define must read
+  // as absent, not resolve into that unrelated library.
+  void *symbol = dlsym(library, name);
+  if (!symbol) return nullptr;
+  Dl_info symbolInfo{}, libraryInfo{};
+  void *anchor = dlsym(library, "eglGetProcAddress");
+  if (anchor && dladdr(symbol, &symbolInfo) && dladdr(anchor, &libraryInfo) &&
+      symbolInfo.dli_fbase != libraryInfo.dli_fbase)
+    return nullptr;
+  return reinterpret_cast<Fn>(symbol);
 #endif
 }
 
