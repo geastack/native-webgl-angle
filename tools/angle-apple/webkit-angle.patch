@@ -1,0 +1,126 @@
+diff --git a/Source/ThirdParty/ANGLE/ANGLE.xcodeproj/project.pbxproj b/Source/ThirdParty/ANGLE/ANGLE.xcodeproj/project.pbxproj
+index bd6898ba..d4da7617 100644
+--- a/Source/ThirdParty/ANGLE/ANGLE.xcodeproj/project.pbxproj
++++ b/Source/ThirdParty/ANGLE/ANGLE.xcodeproj/project.pbxproj
+@@ -8532,7 +8532,6 @@
+ 			buildPhases = (
+ 				7BE34ADD2E01939D001AD21A /* Product Dependencies */,
+ 				31CDFDF02491819E00486F27 /* Headers */,
+-				FFDA50D5269F895400AE11E2 /* Bake Metal Library to NSData */,
+ 				31CDFDF12491819E00486F27 /* Sources */,
+ 				31CDFDF22491819E00486F27 /* Frameworks */,
+ 				31CD00CE2491974C00486F27 /* CopyFiles */,
+@@ -8543,7 +8542,6 @@
+ 			);
+ 			dependencies = (
+ 				DDAD70182FF59CF40054DF83 /* PBXTargetDependency */,
+-				FF194FF62744331A006A97A3 /* PBXTargetDependency */,
+ 			);
+ 			name = "ANGLE (dynamic)";
+ 			productName = "ANGLE (dynamic)";
+@@ -8591,7 +8589,6 @@
+ 			isa = PBXNativeTarget;
+ 			buildConfigurationList = 7BB972012DE47B8B00455D13 /* Build configuration list for PBXNativeTarget "ANGLE (static)" */;
+ 			buildPhases = (
+-				7BB973A02DE48A6600455D13 /* Bake Metal Library to NSData */,
+ 				7BB971FC2DE47B8A00455D13 /* Headers */,
+ 				7BB971FD2DE47B8A00455D13 /* Sources */,
+ 				7BB971FE2DE47B8A00455D13 /* Frameworks */,
+@@ -8600,7 +8597,6 @@
+ 			);
+ 			dependencies = (
+ 				DDAD701A2FF59CF70054DF83 /* PBXTargetDependency */,
+-				7BFAF9372DE6FDD800327F7F /* PBXTargetDependency */,
+ 				7B820C582DE992CD00DAC5E4 /* PBXTargetDependency */,
+ 			);
+ 			name = "ANGLE (static)";
+diff --git a/Source/ThirdParty/ANGLE/Configurations/BaseTarget.xcconfig b/Source/ThirdParty/ANGLE/Configurations/BaseTarget.xcconfig
+index b4604c7a..f0945291 100644
+--- a/Source/ThirdParty/ANGLE/Configurations/BaseTarget.xcconfig
++++ b/Source/ThirdParty/ANGLE/Configurations/BaseTarget.xcconfig
+@@ -29,7 +29,7 @@ HEADER_SEARCH_PATHS = $(BUILT_PRODUCTS_DIR)$(WK_LIBRARY_HEADERS_FOLDER_PATH) $(A
+ 
+ USE_HEADERMAP = NO;
+ 
+-GCC_PREPROCESSOR_DEFINITIONS = $(inherited) $(DEBUG_DEFINES) $(WK_OS_UNFAIR_LOCK_INLINE_CFLAGS) LIBGLESV2_IMPLEMENTATION LIBANGLE_IMPLEMENTATION ANGLE_CAPTURE_ENABLED=0 ANGLE_ENABLE_METAL ANGLE_METAL_XCODE_BUILDS_SHADERS ANGLE_ENABLE_METAL_OWNERSHIP_IDENTITY $(GCC_PREPROCESSOR_DEFINITIONS_WGPU_$(ENABLE_WEBGL_WEBGPU)) $(GCC_PREPROCESSOR_DEFINITIONS_$(WK_PLATFORM_NAME)) $(GCC_PREPROCESSOR_DEFINITIONS_LIBFUZZER_$(ENABLE_LIBFUZZER));
++GCC_PREPROCESSOR_DEFINITIONS = $(inherited) $(DEBUG_DEFINES) $(WK_OS_UNFAIR_LOCK_INLINE_CFLAGS) LIBGLESV2_IMPLEMENTATION LIBANGLE_IMPLEMENTATION ANGLE_CAPTURE_ENABLED=0 ANGLE_ENABLE_METAL ANGLE_ENABLE_METAL_OWNERSHIP_IDENTITY $(GCC_PREPROCESSOR_DEFINITIONS_WGPU_$(ENABLE_WEBGL_WEBGPU)) $(GCC_PREPROCESSOR_DEFINITIONS_$(WK_PLATFORM_NAME)) $(GCC_PREPROCESSOR_DEFINITIONS_LIBFUZZER_$(ENABLE_LIBFUZZER));
+ 
+ GCC_PREPROCESSOR_DEFINITIONS_maccatalyst[arch=arm*] = ANGLE_CPU_ARM64;
+ GCC_PREPROCESSOR_DEFINITIONS_macosx = ANGLE_WEBKIT_EXPLICIT_RESOLVE_TARGET_ENABLED=1;
+diff --git a/Source/ThirdParty/ANGLE/src/libANGLE/renderer/metal/DisplayMtl.mm b/Source/ThirdParty/ANGLE/src/libANGLE/renderer/metal/DisplayMtl.mm
+index dec55c13..58a40b44 100644
+--- a/Source/ThirdParty/ANGLE/src/libANGLE/renderer/metal/DisplayMtl.mm
++++ b/Source/ThirdParty/ANGLE/src/libANGLE/renderer/metal/DisplayMtl.mm
+@@ -1406,7 +1406,7 @@ bool DisplayMtl::supportsShaderBarycentricCoordinates() const
+ 
+ bool DisplayMtl::supportsBCTextureCompression() const
+ {
+-    if (@available(macCatalyst 16.4, iOS 16.4, *))
++    if (@available(macCatalyst 16.4, iOS 16.4, tvOS 16.4, *))
+     {
+         return [mMetalDevice supportsBCTextureCompression];
+     }
+diff --git a/Source/ThirdParty/ANGLE/src/libANGLE/renderer/metal/mtl_utils.mm b/Source/ThirdParty/ANGLE/src/libANGLE/renderer/metal/mtl_utils.mm
+index 216dd2f4..f6cfa9ff 100644
+--- a/Source/ThirdParty/ANGLE/src/libANGLE/renderer/metal/mtl_utils.mm
++++ b/Source/ThirdParty/ANGLE/src/libANGLE/renderer/metal/mtl_utils.mm
+@@ -961,19 +961,19 @@ static std::optional<MTLLanguageVersion> DecodeUserSetMSLVersion()
+             switch (minor)
+             {
+                 case 0:
+-                    if (@available(macOS 13.0, iOS 16.0, *))
++                    if (@available(macOS 13.0, iOS 16.0, tvOS 16.0, *))
+                     {
+                         return MTLLanguageVersion3_0;
+                     }
+                     break;
+                 case 1:
+-                    if (@available(macOS 14.0, iOS 17.0, *))
++                    if (@available(macOS 14.0, iOS 17.0, tvOS 17.0, *))
+                     {
+                         return MTLLanguageVersion3_1;
+                     }
+                     break;
+                 case 2:
+-                    if (@available(macOS 15.0, iOS 18.0, *))
++                    if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, *))
+                     {
+                         return MTLLanguageVersion3_2;
+                     }
+@@ -988,7 +988,7 @@ static std::optional<MTLLanguageVersion> DecodeUserSetMSLVersion()
+             switch (minor)
+             {
+                 case 0:
+-                    if (@available(macOS 26.0, iOS 26.0, *))
++                    if (@available(macOS 26.0, iOS 26.0, tvOS 26.0, *))
+                     {
+                         return MTLLanguageVersion4_0;
+                     }
+@@ -1011,15 +1011,15 @@ static MTLLanguageVersion ResolveDefaultMaxMSLVersion()
+     // Cubemap derivatives are worked around againts 3_2 implementation, not
+     // against the changes in 4_0+.
+ #if ANGLE_MTL_HAS_MSL_3_X_SDK
+-    if (@available(macOS 15.0, iOS 18.0, *))
++    if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, *))
+     {
+         return MTLLanguageVersion3_2;
+     }
+-    if (@available(macOS 14.0, iOS 17.0, *))
++    if (@available(macOS 14.0, iOS 17.0, tvOS 17.0, *))
+     {
+         return MTLLanguageVersion3_1;
+     }
+-    if (@available(macOS 13.0, iOS 16.0, *))
++    if (@available(macOS 13.0, iOS 16.0, tvOS 16.0, *))
+     {
+         return MTLLanguageVersion3_0;
+     }
+@@ -1066,7 +1066,7 @@ angle::ObjCPtr<id<MTLLibrary>> CreateShaderLibrary(
+ // mathMode and mathFloatingPointFunctions are only available with macOS 15+ and iPhoneOS 18+
+ #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000 || __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000 || \
+     __TV_OS_VERSION_MAX_ALLOWED >= 180000 || TARGET_OS_VISION
+-        if (@available(macOS 15.0, iOS 18.0, *))
++        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, *))
+         {
+             if (disableFastMath)
+             {
