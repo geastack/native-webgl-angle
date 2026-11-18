@@ -10,7 +10,9 @@
 #   build.sh <platform> --out <dir>
 #
 #   platform  tvos | tvos-simulator | ios | ios-simulator | macos
-#   --out     where libGeaANGLE.a and ANGLE-NOTICES.txt go
+#   --out     where libGeaANGLE.a and ANGLE-NOTICES.txt go (and, for macos,
+#             libGeaANGLE.dylib: the macOS target bundles the same ANGLE as a
+#             library the WebGL host loads, so a renderer can still be swapped in)
 #
 # Needs macOS with Xcode. The WebKit sources (ANGLE and the build configuration it includes,
 # about 150 MB) are fetched once into ~/.geastack/cache/webkit-angle-<commit> (GEA_ANGLE_CACHE
@@ -79,13 +81,31 @@ if ! xcodebuild -project "$angle/ANGLE.xcodeproj" -target "ANGLE (static)" -conf
 fi
 
 products="$cache/build/Release-$sdk"
+[[ "$sdk" != macosx ]] || products="$cache/build/Release"
 mkdir -p "$out"
 xcrun -sdk "$sdk" clang++ -std=c++17 -O2 -arch arm64 "$minflag" -c "$here/egl_shim.cpp" -o "$products/egl_shim.o"
 libtool -static -no_warning_for_no_symbols -o "$out/libGeaANGLE.a" "$products/libANGLE.a" "$products/libtranslator.a" "$products/egl_shim.o" 2>/dev/null
+if [[ "$platform" == macos ]]; then
+  # The library holds what the entry points need, as a static link of the same
+  # archive would: each entry point is named undefined so the linker pulls it
+  # in (loading the archive whole does not link -- it carries some objects
+  # twice). WebKit's ANGLE names them EGL_* and GL_*; egl_shim adds the one
+  # standard name, eglGetProcAddress, which answers every egl* and gl* name. The static target also leaves out the macOS GPU-info
+  # source (the WebKit build takes it from elsewhere); the library needs it.
+  xcrun -sdk "$sdk" clang++ -std=c++17 -O2 -arch arm64 "$minflag" -I"$angle/src" -I"$angle/include" \
+    -c "$angle/src/gpu_info_util/SystemInfo_macos.mm" -o "$products/SystemInfo_macos.o"
+  entryPoints=()
+  while IFS= read -r symbol; do entryPoints+=("-Wl,-u,$symbol"); done < <(
+    nm -gUj "$out/libGeaANGLE.a" 2>/dev/null | grep -E '^_(EGL_|GL_|egl[A-Z])' | sort -u)
+  xcrun -sdk "$sdk" clang++ -dynamiclib -arch arm64 "$minflag" -o "$out/libGeaANGLE.dylib" \
+    -install_name @rpath/libGeaANGLE.dylib "${entryPoints[@]}" "$out/libGeaANGLE.a" "$products/SystemInfo_macos.o" \
+    -framework Metal -framework QuartzCore -framework IOSurface -framework CoreGraphics \
+    -framework Foundation -framework AppKit -framework IOKit -lz
+fi
 {
   echo "libGeaANGLE.a contains ANGLE (https://chromium.googlesource.com/angle/angle), built from"
   echo "WebKit's copy at commit $WEBKIT_COMMIT. Distribute this notice with any binary that links it."
   echo
   cat "$angle/LICENSE"
 } >"$out/ANGLE-NOTICES.txt"
-echo "[angle] wrote $out/libGeaANGLE.a and $out/ANGLE-NOTICES.txt"
+echo "[angle] wrote $out/libGeaANGLE.a$([[ "$platform" != macos ]] || echo ", libGeaANGLE.dylib") and $out/ANGLE-NOTICES.txt"

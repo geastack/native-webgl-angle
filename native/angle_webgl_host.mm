@@ -801,13 +801,17 @@ static Fn loadSymbol(void *library, const char *name) {
   // implementation that links AppKit drags in the system libGL, which exports
   // the same gl* names; a symbol the implementation does not define must read
   // as absent, not resolve into that unrelated library.
-  void *symbol = dlsym(library, name);
-  if (!symbol) return nullptr;
-  Dl_info symbolInfo{}, libraryInfo{};
   void *anchor = dlsym(library, "eglGetProcAddress");
-  if (anchor && dladdr(symbol, &symbolInfo) && dladdr(anchor, &libraryInfo) &&
+  void *symbol = dlsym(library, name);
+  Dl_info symbolInfo{}, libraryInfo{};
+  if (symbol && anchor && dladdr(symbol, &symbolInfo) && dladdr(anchor, &libraryInfo) &&
       symbolInfo.dli_fbase != libraryInfo.dli_fbase)
-    return nullptr;
+    symbol = nullptr;
+  // An implementation that exports only eglGetProcAddress under its standard
+  // name (geastack's ANGLE: WebKit's copy names the rest EGL_* and GL_*)
+  // answers every egl* and gl* name through it.
+  if (!symbol && anchor && std::strcmp(name, "eglGetProcAddress") != 0)
+    symbol = reinterpret_cast<void *(*)(const char *)>(anchor)(name);
   return reinterpret_cast<Fn>(symbol);
 #endif
 }
@@ -818,6 +822,13 @@ static Fn loadGl(const char *name) {
     if (void *symbol = gWebGL.eglGetProcAddress(name)) return reinterpret_cast<Fn>(symbol);
   }
   return loadSymbol<Fn>(gWebGL.gles, name);
+}
+
+// A GL or EGL entry point of the loaded implementation, for native glue that
+// calls one the WebGL host has no binding for (gl.depthRange, say). Only the
+// implementation's own symbols: never the system OpenGL's same-named ones.
+extern "C" void *gea_three_webgl_gl_proc(const char *name) {
+  return name ? loadGl<void *>(name) : nullptr;
 }
 
 static EGLint lastEglError() {
@@ -1283,28 +1294,19 @@ static bool attachAppKitView(
              "(GEA_ANGLE_EGL_DYLIB / GEA_ANGLE_GLES_DYLIB override them)", GEA_WEBGL_EGL_LIBRARY, GEA_WEBGL_GLES_LIBRARY);
   }
 #elif GEA_WEBGL_APPKIT
-  static const char *const eglPaths[] = {
-    "/Applications/Visual Studio Code.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
-    "/Applications/Cursor.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
-    "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/149.0.7827.201/Libraries/libEGL.dylib",
-    "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/149.0.7827.197/Libraries/libEGL.dylib",
-    nullptr,
-  };
-  static const char *const glesPaths[] = {
-    "/Applications/Visual Studio Code.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libGLESv2.dylib",
-    "/Applications/Cursor.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libGLESv2.dylib",
-    "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/149.0.7827.201/Libraries/libGLESv2.dylib",
-    "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/149.0.7827.197/Libraries/libGLESv2.dylib",
-    nullptr,
-  };
-
-  gWebGL.egl = openFirst("GEA_ANGLE_EGL_DYLIB", eglPaths);
-  gWebGL.gles = openFirst("GEA_ANGLE_GLES_DYLIB", glesPaths);
+  // The app's own ANGLE: libGeaANGLE.dylib (EGL and GLES in one library, built
+  // from WebKit's ANGLE as on tvOS), which the macOS target bundles in
+  // Contents/Frameworks. GEA_ANGLE_EGL_DYLIB / GEA_ANGLE_GLES_DYLIB name another.
+  NSString *frameworks = NSBundle.mainBundle.privateFrameworksPath;
+  std::string bundled = frameworks ? std::string(frameworks.fileSystemRepresentation) + "/libGeaANGLE.dylib" : std::string();
+  const char *const angleLibrary[] = {bundled.empty() ? nullptr : bundled.c_str(), nullptr};
+  gWebGL.egl = openFirst("GEA_ANGLE_EGL_DYLIB", angleLibrary);
+  gWebGL.gles = openFirst("GEA_ANGLE_GLES_DYLIB", angleLibrary);
 #else
 #error "load libEGL/libGLESv2 for this platform, or build with GEA_WEBGL_STATIC_GLES"
 #endif
   if (!gWebGL.egl || !gWebGL.gles) {
-    smokeLog("[three-angle-metal] ANGLE libEGL/libGLESv2 were not found");
+    smokeLog("[three-angle-metal] ANGLE was not found (libGeaANGLE.dylib in the app's Frameworks)");
     return false;
   }
 
