@@ -19,11 +19,24 @@
 #undef near
 #undef far
 #elif defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
 #include "gea/apple/native_bridge.h"
 
 #import <AppKit/AppKit.h>
+#endif
 #import <QuartzCore/QuartzCore.h>
 #import <dispatch/dispatch.h>
+#endif
+// GEA_WEBGL_APPKIT: this host owns the macOS window's view (an NSView backed by
+// a CAMetalLayer) and reads AppKit input itself. Everywhere else -- Windows,
+// UWP, iOS and tvOS -- the platform's own glue owns the window: it attaches the
+// native surface (gea_three_webgl_attach_uwp: an HWND, a CoreWindow, or a
+// CAMetalLayer on iOS and tvOS), reports size and input, and brackets frames.
+#if defined(__APPLE__) && TARGET_OS_OSX
+#define GEA_WEBGL_APPKIT 1
+#else
+#define GEA_WEBGL_APPKIT 0
 #endif
 #if !defined(_WIN32) && !defined(GEA_WEBGL_STATIC_GLES)
 #include <dlfcn.h>
@@ -184,7 +197,7 @@ extern "C" bool gea_three_key_pressed(double code) {
   return gGeaKeyState[c];
 }
 
-#if !defined(__APPLE__)
+#if !GEA_WEBGL_APPKIT
 // The Win32 window procedure owns input on Windows; it reports into the same
 // tables the AppKit host view fills on macOS (keys as macOS virtual key codes).
 extern "C" void gea_three_set_key_state(int code, bool down) {
@@ -201,7 +214,7 @@ extern "C" void gea_three_set_pointer_state(double x, double y, double width, do
 }
 #endif
 
-#if defined(__APPLE__)
+#if GEA_WEBGL_APPKIT
 @interface GeaAngleWebGLHostView : NSView
 @end
 
@@ -632,7 +645,7 @@ struct AngleWebGLState {
   PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
   PFNGLVIEWPORTPROC glViewport = nullptr;
 
-#if !defined(__APPLE__)
+#if !GEA_WEBGL_APPKIT
   void *nativeWindow = nullptr;
 #else
   NSView *hostView = nil;
@@ -688,7 +701,7 @@ static void smokeLog(const char *format, ...) {
     std::fprintf(stderr, "%s\n", message);
     return;
   }
-#elif defined(__APPLE__)
+#elif GEA_WEBGL_APPKIT
   if (!path || path[0] == '\0') path = "/tmp/three-angle-metal-smoke.log";
 #else
   if (!path || path[0] == '\0') {
@@ -715,7 +728,7 @@ extern "C" void gea_three_angle_smoke_log(std::string message) {
 // handler records the position in the host view's coordinate space with the
 // same top-left-origin flip the per-view path used. Returning the event
 // unmodified keeps normal dispatch (clicks, first responder) intact.
-#if defined(__APPLE__)
+#if GEA_WEBGL_APPKIT
 static id gGeaPointerMonitor = nil;
 static void geaInstallPointerMonitor(void) {
   if (gGeaPointerMonitor) return;
@@ -866,7 +879,7 @@ static void logEglFailure(const char *step) {
   std::fprintf(stderr, "[three-angle-metal] %s failed, EGL error 0x%04x\n", step, lastEglError());
 }
 
-#if defined(__APPLE__)
+#if GEA_WEBGL_APPKIT
 static CGFloat backingScaleForHostView(NSView *nativeView) {
   CGFloat scale = nativeView.window ? nativeView.window.backingScaleFactor : 0.0;
   if (scale <= 0.0 && nativeView.window.screen) scale = nativeView.window.screen.backingScaleFactor;
@@ -939,13 +952,13 @@ extern "C" void gea_three_webgl_update_size_uwp(double width, double height, dou
 }
 #endif
 
-#if !defined(__APPLE__)
+#if !GEA_WEBGL_APPKIT
 // The UWP frame driver owns its EGL context exclusively until it returns to
 // CoreWindow event dispatch. Other hosts retain per-call binding semantics.
 static thread_local bool gUwpFrameContextCurrent = false;
 #endif
 static bool makeCurrent(const char *label) {
-#if !defined(__APPLE__)
+#if !GEA_WEBGL_APPKIT
   if (gUwpFrameContextCurrent) return true;
 #endif
   if (!gWebGL.ready && gWebGL.context == EGL_NO_CONTEXT) return false;
@@ -971,7 +984,7 @@ static bool makeCurrent(const char *label) {
   if (gWebGL.eglSwapInterval) {
     const char *requested = std::getenv("GEA_ANGLE_SWAP_INTERVAL");
     const EGLint fallback = requested ? static_cast<EGLint>(std::atoi(requested)) : 0;
-#if defined(__APPLE__)
+#if GEA_WEBGL_APPKIT
     const EGLint paced = fallback;
 #else
     const EGLint paced = 1;
@@ -986,7 +999,7 @@ static bool makeCurrent(const char *label) {
   return true;
 }
 
-#if !defined(__APPLE__)
+#if !GEA_WEBGL_APPKIT
 extern "C" bool gea_three_webgl_begin_frame_uwp() {
   // Always rebind after the dispatcher, where arbitrary platform callbacks
   // may have used a different context. No such callbacks run within the frame.
@@ -1000,7 +1013,7 @@ extern "C" void gea_three_webgl_end_frame_uwp() {
 }
 #endif
 
-#if defined(__APPLE__)
+#if GEA_WEBGL_APPKIT
 static bool rebuildWindowSurface(const char *label) {
   if (!gWebGL.eglCreateWindowSurface || !gWebGL.eglDestroySurface || !gWebGL.eglMakeCurrent ||
       !gWebGL.metalLayer || !gWebGL.config || gWebGL.context == EGL_NO_CONTEXT) {
@@ -1182,7 +1195,7 @@ static bool loadGlSymbols() {
   return true;
 }
 
-#if !defined(__APPLE__)
+#if !GEA_WEBGL_APPKIT
 extern "C" bool gea_three_webgl_attach_uwp(
   void *nativeWindow,
 #else
@@ -1240,7 +1253,7 @@ extern "C" bool gea_three_webgl_attach(
     smokeLog("[native-webgl-angle] EGL/GLES implementation not found: %s and %s beside the executable "
              "(GEA_ANGLE_EGL_DYLIB / GEA_ANGLE_GLES_DYLIB override them)", GEA_WEBGL_EGL_LIBRARY, GEA_WEBGL_GLES_LIBRARY);
   }
-#elif defined(__APPLE__)
+#elif GEA_WEBGL_APPKIT
   static const char *const eglPaths[] = {
     "/Applications/Visual Studio Code.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
     "/Applications/Cursor.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
@@ -1337,7 +1350,7 @@ extern "C" bool gea_three_webgl_attach(
   }
   gWebGL.config = config;
 
-#if !defined(__APPLE__)
+#if !GEA_WEBGL_APPKIT
   gWebGL.nativeWindow = nativeWindow;
   gea_three_webgl_update_size_uwp(width, height, devicePixelRatio);
   if (gWebGL.eglCreateWindowSurface) {
@@ -1403,7 +1416,7 @@ extern "C" bool gea_three_webgl_attach(
 
   gWebGL.ready = true;
   gWebGL.glViewport(0, 0, gWebGL.widthPx, gWebGL.heightPx);
-#if defined(__APPLE__)
+#if GEA_WEBGL_APPKIT
   dispatch_async(dispatch_get_main_queue(), ^{
     if (gWebGL.ready && rebuildWindowSurface("eglCreateWindowSurface(deferred)")) {
       smokeLog("[three-angle-metal] WebGL EGL surface rebound at %dx%d", gWebGL.widthPx, gWebGL.heightPx);
@@ -1519,7 +1532,7 @@ extern "C" void gea_three_webgl_swap() {
   // TEMP-DIAG: GEA_THREE_VIEW_DUMP=1 — at frame 60, log the window's full
   // subview tree and a hit-test grid so overlay views that would swallow
   // mouse events are visible without Accessibility permission.
-#if defined(__APPLE__)
+#if GEA_WEBGL_APPKIT
   if (std::getenv("GEA_THREE_VIEW_DUMP")) {
     static int viewDumpCount = 0;
     if (++viewDumpCount == 60) {

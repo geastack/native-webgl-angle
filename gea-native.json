@@ -1,16 +1,103 @@
 {
-  "$comment": "What a GeaStack native target needs in order to build this package into an app. Paths are relative to the package root.",
+  "$comment": "What a GeaStack native target needs in order to build this package into an app. Paths are relative to the package root. On tvOS and iOS the target builds a static ANGLE from WebKit's sources once (tools/angle-apple/build.sh) and caches it.",
   "windows": {
-    "sources": ["native/angle_webgl_host.mm", "native/audio_host.mm", "native/resource_host.mm", "native/win32_webgl_surface.cpp"],
-    "includeDirs": ["native"],
+    "sources": [
+      "native/angle_webgl_host.mm",
+      "native/audio_host.mm",
+      "native/resource_host.mm",
+      "native/win32_webgl_surface.cpp"
+    ],
+    "includeDirs": [
+      "native"
+    ],
     "requires": {
       "gles": {
         "description": "an EGL and OpenGL ES 3 implementation (ANGLE's libEGL.dll and libGLESv2.dll, or one DLL exporting both)",
         "files": {
-          "egl": { "define": "GEA_WEBGL_EGL_LIBRARY", "default": "libEGL.dll" },
-          "gles": { "define": "GEA_WEBGL_GLES_LIBRARY", "default": "libGLESv2.dll" }
+          "egl": {
+            "define": "GEA_WEBGL_EGL_LIBRARY",
+            "default": "libEGL.dll"
+          },
+          "gles": {
+            "define": "GEA_WEBGL_GLES_LIBRARY",
+            "default": "libGLESv2.dll"
+          }
         }
       }
+    }
+  },
+  "tvos": {
+    "sources": [
+      "native/angle_webgl_host.mm",
+      "native/audio_host.mm",
+      "native/resource_host.mm",
+      "native/uikit_webgl_surface.mm"
+    ],
+    "includeDirs": [
+      "native"
+    ],
+    "frameworks": [
+      "Metal",
+      "QuartzCore",
+      "IOSurface",
+      "CoreGraphics",
+      "UIKit",
+      "AVFoundation"
+    ],
+    "systemLibraries": [
+      "z"
+    ],
+    "defines": {
+      "GEA_WEBGL_STATIC_GLES": true
+    },
+    "build": {
+      "command": [
+        "tools/angle-apple/build.sh",
+        "{platform}"
+      ],
+      "libraries": [
+        "libGeaANGLE.a"
+      ],
+      "resources": [
+        "ANGLE-NOTICES.txt"
+      ]
+    }
+  },
+  "ios": {
+    "sources": [
+      "native/angle_webgl_host.mm",
+      "native/audio_host.mm",
+      "native/resource_host.mm",
+      "native/uikit_webgl_surface.mm"
+    ],
+    "includeDirs": [
+      "native"
+    ],
+    "frameworks": [
+      "Metal",
+      "QuartzCore",
+      "IOSurface",
+      "CoreGraphics",
+      "UIKit",
+      "AVFoundation"
+    ],
+    "systemLibraries": [
+      "z"
+    ],
+    "defines": {
+      "GEA_WEBGL_STATIC_GLES": true
+    },
+    "build": {
+      "command": [
+        "tools/angle-apple/build.sh",
+        "{platform}"
+      ],
+      "libraries": [
+        "libGeaANGLE.a"
+      ],
+      "resources": [
+        "ANGLE-NOTICES.txt"
+      ]
     }
   }
 }
