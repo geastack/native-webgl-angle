@@ -82,7 +82,7 @@ export function atlasTexture(atlas: GlyphAtlas): DataTexture {
       1,
       NoColorSpace,
     )
-    single.userData.redAsGreen = true
+    single.userData = { redAsGreen: true }
     single.unpackAlignment = 1
     single.onUpdate = releaseAtlasBytes
     single.needsUpdate = true
@@ -122,7 +122,7 @@ export function atlasTexture(atlas: GlyphAtlas): DataTexture {
 function releaseAtlasBytes(texture: Texture): void {
   if (!(texture instanceof DataTexture)) return
   const image = texture.image
-  if (image !== null) image.data = new Uint8Array(0)
+  if (image !== null && !Array.isArray(image)) image.data = new Uint8Array(0)
 }
 
 const kerningCacheKeys: string[] = []

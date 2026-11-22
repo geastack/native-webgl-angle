@@ -18,7 +18,7 @@ const ts = createRequire(import.meta.resolve('@geastack/compiler/package.json'))
 const packageDir = path.dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 
 const rendererPath = fileURLToPath(import.meta.resolve('three/src/renderers/WebGLRenderer.js'))
-assert.ok(fs.existsSync(rendererPath), 'Install the Examples workspace dependencies before running this test')
+assert.ok(fs.existsSync(rendererPath), 'Run npm install in this package before running this test')
 const { transformSource } = plugin.configure().hostShims
 
 const statement = 'this.renderBufferDirect = function ( camera, scene, geometry, material, object, group ) {'

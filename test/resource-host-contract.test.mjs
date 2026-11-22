@@ -40,8 +40,11 @@ fs.writeFileSync(join(out, 'outside.bin'), Buffer.from([1, 2, 3]))
 
 const binary = join(out, `resource-host-contract-test${executableSuffix}`)
 const host = path.join(packageDir, 'native', 'resource_host.mm')
+// The host imports Foundation on Apple platforms, so it is Objective-C++ there.
+const hostLanguage = process.platform === 'darwin' ? 'objective-c++' : 'c++'
+const hostLibraries = process.platform === 'darwin' ? ['-framework', 'Foundation'] : []
 execFileSync(process.env.CXX ?? 'clang++', ['-std=c++20', '-O1', '-fsanitize=address,undefined', `-I${runtimeInclude}`,
-  '-x', 'c++', host, '-x', 'c++', '-', '-o', binary], {
+  '-x', hostLanguage, host, '-x', 'c++', '-', ...hostLibraries, '-o', binary], {
   input: `${result.source}
 int main() { __gea_top_level(); }
 `,
