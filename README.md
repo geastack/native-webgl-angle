@@ -5,9 +5,9 @@ the Three.js macOS path.
 
 ## Installation
 
-Install `@geastack/native-webgl-angle` and its Three.js peer. The package
-requires compiler 1.0.9 or later within the 1.x line and Three.js 0.185.x, and
-resolves Apple bindings from npm; it does not require a sibling Apple
+Install `@geastack/native-webgl-angle` and its Three.js peer. Its peer
+dependencies are `@geastack/compiler` `^1.0.29` and `three` `^0.185.0`; it
+depends on `@geastack/apple` from npm and does not require a sibling Apple
 checkout.
 
 ```sh
@@ -19,8 +19,13 @@ not precompiled browser JavaScript. Load the compiler plugin from
 `@geastack/native-webgl-angle/geatsc-plugin`. Native source files ship under
 `native/` and can be located with, for example,
 `require.resolve('@geastack/native-webgl-angle/native/angle_webgl_host.mm')`.
-The platform build still supplies the generated host headers, platform SDK,
-and ANGLE libraries; this package does not bundle those binaries.
+The platform build supplies the generated host headers and the platform SDK.
+ANGLE comes from `gea-native.json`: on macOS, iOS and tvOS the target builds
+WebKit's ANGLE with `tools/angle-apple/build.sh` the first time an app needs it
+and caches it (macOS bundles it as `libGeaANGLE.dylib` in the app's
+`Contents/Frameworks`; iOS and tvOS link a static `libGeaANGLE.a`, see
+[tvOS and iOS](#tvos-and-ios)). The package ships no prebuilt ANGLE binaries;
+on Windows the app supplies a `gles` provider (below).
 
 The experimental BatchedMesh plugin is excluded from the npm archive.
 Packaging validation loads the plugin and all of its eager imports directly
@@ -41,11 +46,32 @@ define their own ANGLE/WebGL bridge.
 ## Contents
 
 ```text
-src/nativeWebGL.ts       current TS WebGL facade used by Three.WebGLRenderer
-src/nativeWebGLHost.ts   typed declarations for geatsc native host functions
-geatsc-plugin.mjs        host shim metadata for geatsc
-native/angle_webgl_host.mm
-                         Objective-C++ ANGLE/Metal host implementation
+src/nativeWebGL.ts            TS WebGL facade used by Three.WebGLRenderer
+src/nativeWebGLHost.ts        typed declarations for the native WebGL host functions
+src/nativeAudioHost.ts        Web Audio facade over the native audio host
+src/nativeResources.ts        resource/file loading through the native host
+src/nativeWebGLAnimation.ts   animation-loop helpers
+src/nativeThreeUtils.ts       Three.js helpers for the native path
+src/nativeWebXRManager.ts     WebXR manager stand-in
+src/troika-three-text.ts      troika-three-text replacement over baked atlases
+src/text/                     text atlases and native text types
+src/inflate.ts                inflate for compressed assets
+src/gea-native-types.d.ts     native type declarations
+geatsc-plugin.mjs             host shim metadata for geatsc
+geatsc-plugin-uploads.mjs, geatsc-plugin-uniforms.mjs, geatsc-plugin-instancing.mjs,
+geatsc-plugin-readback.mjs    plugin parts loaded by geatsc-plugin.mjs
+geatsc-plugin-batched-probe.mjs, test/batched-render-scene.ts,
+test/auto-instanced-render-scene.ts
+                              BatchedMesh / instancing validation fixtures
+native/angle_webgl_host.mm    Objective-C++ ANGLE host implementation
+native/audio_host.mm, native/audio_uwp.h, native/resource_host.mm
+                              native audio and resource hosts
+native/appkit_webgl_surface.mm, native/uikit_webgl_surface.mm,
+native/win32_webgl_surface.cpp
+                              per-platform surfaces
+native/webgl_readback.h       framebuffer readback helper
+gea-native.json               what each native target builds into an app
+tools/angle-apple/            ANGLE build for macOS, iOS and tvOS
 ```
 
 ## Native sources in apps
@@ -86,7 +112,8 @@ The bridge implementation itself lives here.
 ### tvOS and iOS
 
 Nothing to configure: install the package, use it, and run
-`gea build --target tvos` (or `ios`). This package's `gea-native.json` gives
+`gea build --target tvos` (or `ios`). tvOS builds need `@geastack/cli` 0.1.110
+or later. This package's `gea-native.json` gives
 the iOS and tvOS targets its host, its UIKit surface (`uikit_webgl_surface.mm`,
 a `CAMetalLayer` view filling the window, attached before the program's top
 level runs) and a static ANGLE, which those platforms need because they cannot
@@ -106,10 +133,9 @@ show them in the app's credits or about screen.
 
 ## Direction
 
-The current TS facade still routes many WebGL calls through transitional
-opcode-style host functions. The intended end state is direct typed native
-methods and typed WebGL handles, with no `gea_cpp_value`/`gea_cpp_key` in the
-bridge hot path.
+Each WebGL call in the TS facade goes through its own typed host function
+declared in `src/nativeWebGLHost.ts`. The goal is typed WebGL handles
+throughout, with no `gea_cpp_value`/`gea_cpp_key` in the bridge hot path.
 
 ### Synchronous numeric uploads
 
@@ -142,8 +168,8 @@ to change them. Any present value, including an empty string, enables them.
 
 ### Validation
 
-`npm run test:host-effects` checks 87 direct GL/input declarations and 15 audio
-declarations against the compiler's host-mutation census. Their
+`npm run test:host-effects` checks the direct GL/input and audio declarations
+against the compiler's host-mutation census. Their
 `@gea-host-inert` contracts permit native state changes while excluding script
 reference retention, script object mutation and script callbacks. The native
 implementations in `angle_webgl_host.mm` and `audio_host.mm` were audited for

@@ -20,7 +20,7 @@ const packageDir = path.dirname(fileURLToPath(new URL('../package.json', import.
 process.env.GEATSC2_WEBGL_PLUGIN = path.join(packageDir, 'geatsc-plugin.mjs')
 
 const upstreamPath = fileURLToPath(import.meta.resolve('three/src/renderers/webgl/WebGLBindingStates.js'))
-assert.ok(fs.existsSync(upstreamPath), 'Install the Examples workspace dependencies before running this test')
+assert.ok(fs.existsSync(upstreamPath), 'Run npm install in this package before running this test')
 const upstream = fs.readFileSync(upstreamPath, 'utf8')
 const definitions = plugin.configure().hostShims
 assert.equal(definitions.embeddedHostFunctions.threeWebGLBindVertexArray, 'gea_three_webgl_bind_vertex_array')

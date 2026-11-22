@@ -12,76 +12,45 @@ import { createRequire } from 'node:module'
 const ts = createRequire(import.meta.resolve('@geastack/compiler/package.json'))('typescript')
 
 const packageDir = path.dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
-const repoRoot = path.dirname(packageDir)
 const threeSrc = fileURLToPath(new URL('./', import.meta.resolve('three/src/constants.js')))
-const webGLTexturesPath = path.join(
-  repoRoot,
-  'examples',
-  'node_modules',
-  'three',
-  'src',
+const webGLTexturesPath = path.join(threeSrc,
   'renderers',
   'webgl',
   'WebGLTextures.js',
 )
-const webGLUniformsPath = path.join(
-  repoRoot,
-  'examples',
-  'node_modules',
-  'three',
-  'src',
+const webGLUniformsPath = path.join(threeSrc,
   'renderers',
   'webgl',
   'WebGLUniforms.js',
 )
-const webGLProgramPath = path.join(
-  repoRoot,
-  'examples',
-  'node_modules',
-  'three',
-  'src',
+const webGLProgramPath = path.join(threeSrc,
   'renderers',
   'webgl',
   'WebGLProgram.js',
 )
-const webGLAttributesPath = path.join(
-  repoRoot,
-  'examples',
-  'node_modules',
-  'three',
-  'src',
+const webGLAttributesPath = path.join(threeSrc,
   'renderers',
   'webgl',
   'WebGLAttributes.js',
 )
-const webGLRendererPath = path.join(repoRoot, 'examples', 'node_modules', 'three', 'src', 'renderers', 'WebGLRenderer.js')
-const webGLRenderTargetPath = path.join(
-  repoRoot,
-  'examples',
-  'node_modules',
-  'three',
-  'src',
+const webGLRendererPath = path.join(threeSrc, 'renderers', 'WebGLRenderer.js')
+const webGLRenderTargetPath = path.join(threeSrc,
   'renderers',
   'WebGLRenderTarget.js',
 )
-const webGLShadowMapPath = path.join(
-  repoRoot,
-  'examples',
-  'node_modules',
-  'three',
-  'src',
+const webGLShadowMapPath = path.join(threeSrc,
   'renderers',
   'webgl',
   'WebGLShadowMap.js',
 )
 const nativeWebGLPath = path.join(packageDir, 'src', 'nativeWebGL.ts')
 
-assert.ok(fs.existsSync(webGLTexturesPath), 'install the Examples workspace dependencies before running this test')
+assert.ok(fs.existsSync(webGLTexturesPath), 'run npm install in this package before running this test')
 
 const transformSource = plugin.configure().hostShims.transformSource
 // EventDispatcher supplies a receiver and discards callback results. Preserve
 // that actual ABI when replacing its listener dictionary with native storage.
-const eventDispatcherPath = path.join(repoRoot, 'examples', 'node_modules', 'three', 'src', 'core', 'EventDispatcher.js')
+const eventDispatcherPath = path.join(threeSrc, 'core', 'EventDispatcher.js')
 const eventDispatcherSource = fs.readFileSync(eventDispatcherPath, 'utf8')
 const nativeEventDispatcher = transformSource({ fileName: eventDispatcherPath, text: eventDispatcherSource })
 assert.ok(nativeEventDispatcher.includes('@typedef {(this: EventDispatcher, event: NativeEvent) => void} NativeEventListener'))
@@ -111,7 +80,7 @@ for (const source of [eventDispatcherSource, nativeEventDispatcher]) {
 // bag's `needsLights`, and that flag chain is `undefined` for every material
 // without lights (`MeshBasicMaterial`). The declared slot has to admit it, or
 // it lays out as a bare native boolean and the first frame throws storing it.
-const webGLPropertiesPath = path.join(repoRoot, 'examples', 'node_modules', 'three', 'src', 'renderers', 'webgl', 'WebGLProperties.js')
+const webGLPropertiesPath = path.join(threeSrc, 'renderers', 'webgl', 'WebGLProperties.js')
 const nativeWebGLProperties = transformSource({ fileName: webGLPropertiesPath, text: fs.readFileSync(webGLPropertiesPath, 'utf8') })
 assert.match(nativeWebGLProperties, /\/\*\* @type \{boolean\|undefined\} \*\/\s*this\.needsLights = undefined;/)
 // `update( object, key, value )` stored a union of every slot's type into one
@@ -120,7 +89,7 @@ assert.doesNotMatch(nativeWebGLProperties, /function update\(/)
 // `getParameters` stores `shaderIDs[ material.type ]` as `parameters.shaderID`,
 // and every `ShaderMaterial` misses that table, so the lookup must state the
 // `undefined` it yields there.
-const webGLProgramsPath = path.join(repoRoot, 'examples', 'node_modules', 'three', 'src', 'renderers', 'webgl', 'WebGLPrograms.js')
+const webGLProgramsPath = path.join(threeSrc, 'renderers', 'webgl', 'WebGLPrograms.js')
 const nativeWebGLPrograms = transformSource({ fileName: webGLProgramsPath, text: fs.readFileSync(webGLProgramsPath, 'utf8') })
 assert.doesNotMatch(nativeWebGLPrograms, /const shaderID = shaderIDs\[ material\.type \];/)
 assert.match(nativeWebGLPrograms, /const shaderID = \/\*\* @type \{string\|undefined\} \*\/ \( shaderIDs\[ material\.type \] \);/)
